@@ -103,6 +103,12 @@
   .topology-page .legend { margin-top: 0.4cm; font-size: 8pt; color: #605E5C; }
   .topology-page .legend .item { display: inline-block; margin-right: 0.7cm; white-space: nowrap; }
   .topology-page .swatch { display: inline-block; width: 9pt; height: 9pt; border-radius: 2pt; margin-right: 0.15cm; vertical-align: middle; }
+  /* The diagram is laid out left-to-right internally (root at left, deeper
+     tiers to the right) then rotated 90deg clockwise here so the root ends
+     up at the page's top and the deepest tier at the bottom - using the
+     page's height for "how many hops deep" instead of its narrower width. */
+  .topology-diagram-outer { margin: 0 auto; overflow: visible; }
+  .topology-diagram-inner { transform-origin: top left; }
 </style>
 </head>
 <body>
@@ -132,7 +138,11 @@
 <div class="topology-page">
   <h2>Site topology</h2>
   <div class="sub">Switch-to-switch links discovered via LLDP. Non-switch neighbors (access points, phones, etc.) are omitted.</div>
-  {{ topology_svg | safe }}
+  <div class="topology-diagram-outer" style="width:{{ topology_css.post_w }}px; height:{{ topology_css.post_h }}px;">
+    <div class="topology-diagram-inner" style="width:{{ topology_css.pre_w }}px; height:{{ topology_css.pre_h }}px; transform: translate({{ topology_css.post_w }}px, 0) rotate(90deg);">
+      {{ topology_svg | safe }}
+    </div>
+  </div>
   <div class="legend">
     <span class="item"><span class="swatch" style="background:#001E62;"></span>core switch(es)</span>
     <span class="item"><span class="swatch" style="background:#EEF0F5;border:0.5pt solid #B1B3B3;"></span>other switches</span>

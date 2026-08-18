@@ -16,20 +16,31 @@ falls back to a single root: the switch with the most inter-switch links.
 Any switch with no detected link to another switch in the report is still
 shown, in an "unlinked" column, so nothing goes missing silently.
 
-Layout flows left to right - root(s) at the left edge, each hop further
-right - rather than top to bottom. An SVG embedded at width:100% always
-fills the page's horizontal space regardless of its declared viewBox size,
-so whichever axis carries "how many switches sit at this hop" ends up
-fighting for room inside a fixed page width if it's mapped to X. Mapping
-it to Y instead means it only competes for vertical space, which a tall
-portrait page has far more of - a tier of 6 switches stacks cleanly
-instead of being squeezed into narrow, label-colliding boxes.
+Internally, the diagram is laid out left to right - root(s) at the left
+edge, each hop further right, switches within a hop stacked vertically -
+because that's the natural coordinate system for a hierarchy. The caller
+(report.py/report.html) then rotates the whole rendered graphic 90 degrees
+for placement on a portrait page: the diagram's left edge (the root)
+lands at the top of the page and its right edge (the deepest tier) lands
+at the bottom, so "how many switches sit at this hop" (the diagram's
+internal vertical extent) maps to the page's *width* after rotation and
+"how many hops deep" maps to the page's height - which a tall portrait
+page has far more of. This function only returns the unrotated diagram
+plus its natural width/height; the rotation itself is CSS, in the template.
 """
 from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
+from dataclasses import dataclass
 from xml.sax.saxutils import escape
+
+
+@dataclass
+class TopologyDiagram:
+    svg: str
+    width: float   # natural (pre-rotation) size, in SVG user units == CSS px
+    height: float
 
 NAVY = "#001E62"
 TEAL = "#00BFB2"
@@ -237,7 +248,7 @@ def _resolve_label_collisions(
     return placed
 
 
-def build_switch_topology(switches: list[dict]) -> str | None:
+def build_switch_topology(switches: list[dict]) -> TopologyDiagram | None:
     """switches: [{"name": str, "mac": str|None, "model": str, "neighbors": [...]}]"""
     if len(switches) < 2:
         return None
@@ -313,7 +324,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     canvas_h = band_top + 10
 
     svg_parts = [
-        f'<svg width="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
+        f'<svg width="100%" height="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         'xmlns="http://www.w3.org/2000/svg" role="img">',
         "<title>Switch topology</title>",
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
@@ -397,4 +408,4 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         )
 
     svg_parts.append("</svg>")
-    return "\n".join(svg_parts)
+    return TopologyDiagram(svg="\n".join(svg_parts), width=canvas_w, height=canvas_h)
