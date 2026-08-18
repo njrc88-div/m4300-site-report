@@ -47,6 +47,11 @@ def _fan_status_text(fan_state) -> str:
 async def _device_info(client: NetgearClient) -> dict:
     info = dict(await client.get_device_info())
     info["fanState_text"] = _fan_status_text(info.get("fanState"))
+    # Some firmware doesn't populate lanIpAddress at all (observed on a
+    # 14.0.6.19 M4350). The address we used to log in IS the management
+    # IP - it's a reliable fallback rather than leaving the report blank.
+    if not info.get("lanIpAddress"):
+        info["lanIpAddress"] = client.host
     return info
 
 
