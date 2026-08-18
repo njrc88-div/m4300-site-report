@@ -1,9 +1,19 @@
-# M4300 Site Report Generator
+# M4300 / M4250 Site Report Generator
 
-A small containerized app that talks to NETGEAR M4300 switches over their
-REST API (ConfigAgent v2.0.0.59) and produces a branded, client-ready PDF
+A small containerized app that talks to NETGEAR M4300 and M4250 switches
+over their REST API (ConfigAgent) and produces a branded, client-ready PDF
 site report. Built for site surveys / commissioning reports where you need
-to document switch configuration and status across a site.
+to document switch configuration and status across a site with a mix of
+switch models.
+
+The M4300 and M4250 REST APIs share the same endpoint set and schemas
+(the M4250 doc set adds three extra endpoints: `/device_config`,
+`/download`, `/download_status`). In practice, **real firmware doesn't
+reliably match either published OpenAPI spec** — see "A note on API
+drift" below — so the client is written to tolerate that rather than to
+special-case one model over the other. There's no switch-model gate on
+which modules you can run; whatever a given switch actually supports,
+works.
 
 ## What it does
 
@@ -13,7 +23,11 @@ The app has three tabs:
    username, password). Credentials are kept in your browser's
    `localStorage` only; they're sent to the backend solely when you click
    Test, Fetch, or Generate, and the server never writes them to disk.
-   Click **Test** to confirm the app can log in and read `/device_info`.
+   Click **Test** to confirm the app can log in and read `/device_info` —
+   the switch's reported model and firmware version are then shown in the
+   table and carried through to the Explorer and Report Builder tabs, so
+   you always know which physical unit (M4300, M4350, M4250, ...) you're
+   looking at.
 2. **Data Explorer** — pick a saved switch and a data module (ports, PoE,
    VLANs, STP, LLDP neighbors, fiber diagnostics, etc.) and fetch it live
    to sanity-check the API before building a report.
@@ -40,11 +54,27 @@ The app has three tabs:
 | LLDP Neighbors | `/lldp_remote_devices` |
 | Fiber / SFP Diagnostics | `/fiber_optics` |
 | MAC Address Table (FDB) | `/fdbs` (off by default in reports — can be large) |
+| Running Configuration | `/device_config?file=running-config` (off by default — not every model/firmware supports it; fails gracefully if not) |
 
 Adding a new endpoint is a matter of adding one client method in
 [`app/netgear_client.py`](app/netgear_client.py), one entry in
 [`app/modules.py`](app/modules.py), and one template branch in
 [`app/templates/report.html`](app/templates/report.html).
+
+## A note on API drift
+
+The M4300 unit this app was first validated against (firmware 14.0.6.19)
+returns response envelopes in `camelCase` (`{"deviceInfo": {...}}`) even
+though the M4300 OpenAPI spec we were given documents `snake_case`
+(`{"device_info": {...}}`) — and the M4250 spec documents the same
+snake_case convention. Rather than branch behavior per model/firmware
+version, `netgear_client.py`'s `_unwrap()` helper just takes whatever
+data key is actually present in the response (trying documented spellings
+first, falling back to "the other key besides `resp`"). This is why the
+app doesn't gate which GET modules are available per switch model — model
+is surfaced for your own reference, but every module is attempted
+against every switch, and failures are reported per-module rather than
+blocking the whole report.
 
 ## Running it
 

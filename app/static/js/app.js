@@ -33,6 +33,8 @@
       username: "",
       password: "",
       verify_tls: false,
+      model: "",
+      firmware: "",
       status: "pending",
       statusMsg: "",
     };
@@ -72,7 +74,7 @@
     tbody.innerHTML = "";
     if (switches.length === 0) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="8" class="empty-state">No switches yet. Click "Add Switch" to get started.</td>`;
+      tr.innerHTML = `<td colspan="9" class="empty-state">No switches yet. Click "Add Switch" to get started.</td>`;
       tbody.appendChild(tr);
       return;
     }
@@ -86,6 +88,7 @@
         <td><input type="text" data-field="username" value="${escapeAttr(sw.username)}" placeholder="admin"></td>
         <td><input type="password" data-field="password" value="${escapeAttr(sw.password)}"></td>
         <td style="text-align:center"><input type="checkbox" data-field="verify_tls" ${sw.verify_tls ? "checked" : ""}></td>
+        <td class="model-cell">${modelCell(sw)}</td>
         <td>${statusPill(sw)}</td>
         <td style="display:flex; gap:0.35rem;">
           <button class="btn secondary test-btn" style="padding:0.3rem 0.5rem;">Test</button>
@@ -112,15 +115,20 @@
   }
 
   function statusPill(sw) {
-    if (sw.status === "ok") return `<span class="status-pill ok">&#10003; ${escapeHtml(sw.statusMsg || "Connected")}</span>`;
+    if (sw.status === "ok") return `<span class="status-pill ok">&#10003; Connected</span>`;
     if (sw.status === "fail") return `<span class="status-pill fail" title="${escapeAttr(sw.statusMsg)}">&#10007; Failed</span>`;
     if (sw.status === "testing") return `<span class="status-pill pending"><span class="spinner" style="border-top-color:#888;border-color:rgba(0,0,0,0.15)"></span> Testing...</span>`;
     return `<span class="status-pill pending">Not tested</span>`;
   }
 
+  function modelCell(sw) {
+    if (!sw.model) return `<span class="empty-state" style="padding:0">Run Test &rarr;</span>`;
+    return `<div style="font-weight:600">${escapeHtml(sw.model)}</div><div style="color:var(--gray-muted);font-size:0.75rem">${escapeHtml(sw.firmware || "")}</div>`;
+  }
+
   async function testConnection(sw, tr) {
     sw.status = "testing";
-    tr.querySelector("td:nth-child(7)").innerHTML = statusPill(sw);
+    tr.querySelector("td:nth-child(8)").innerHTML = statusPill(sw);
     try {
       const resp = await fetch("/api/test-connection", {
         method: "POST",
@@ -129,12 +137,18 @@
       });
       const data = await resp.json();
       sw.status = data.success ? "ok" : "fail";
-      sw.statusMsg = data.success ? `${data.model || ""} ${data.firmware || ""}`.trim() : data.message;
+      sw.statusMsg = data.success ? "Connected" : data.message;
+      if (data.success) {
+        sw.model = data.model || sw.model;
+        sw.firmware = data.firmware || sw.firmware;
+      }
     } catch (err) {
       sw.status = "fail";
       sw.statusMsg = String(err);
     }
-    tr.querySelector("td:nth-child(7)").innerHTML = statusPill(sw);
+    saveSwitches();
+    tr.querySelector(".model-cell").innerHTML = modelCell(sw);
+    tr.querySelector("td:nth-child(8)").innerHTML = statusPill(sw);
   }
 
   function toSwitchPayload(sw) {
@@ -160,7 +174,10 @@
     const sel = document.getElementById("explore-switch");
     sel.innerHTML = switches
       .filter((s) => s.host)
-      .map((s) => `<option value="${s.id}">${escapeHtml(s.name || s.host)} (${escapeHtml(s.host)})</option>`)
+      .map((s) => {
+        const label = `${s.name || s.host} (${s.host}${s.model ? " · " + s.model : ""})`;
+        return `<option value="${s.id}">${escapeHtml(label)}</option>`;
+      })
       .join("") || `<option value="">No switches saved yet</option>`;
   }
 
@@ -209,7 +226,7 @@
     el.innerHTML = usable
       .map(
         (s) => `<div class="switch-chip ${selectedSwitchIds.has(s.id) ? "selected" : ""}" data-id="${s.id}">
-          ${escapeHtml(s.name || s.host)}
+          ${escapeHtml(s.name || s.host)}${s.model ? ` <span style="opacity:0.7">· ${escapeHtml(s.model)}</span>` : ""}
         </div>`
       )
       .join("");

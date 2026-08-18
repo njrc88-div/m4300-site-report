@@ -209,6 +209,11 @@ async def _fdb(client: NetgearClient) -> dict:
     return {"entries": decorated}
 
 
+async def _running_config(client: NetgearClient) -> dict:
+    lines = await client.get_device_config("running-config")
+    return {"text": "\n".join(str(line) for line in lines)}
+
+
 MODULES: list[Module] = [
     Module("device_info", "Device Information", "Overview",
            "Model, serial, firmware, uptime, CPU/memory, fan and temperature status.",
@@ -246,6 +251,10 @@ MODULES: list[Module] = [
     Module("fdb", "MAC Address Table (FDB)", "Topology",
            "Full forwarding database - can be large; off by default.",
            False, _fdb),
+    Module("running_config", "Running Configuration", "Config",
+           "Full running-config text export. Not supported on every model/firmware - "
+           "off by default and skipped gracefully if the switch rejects it.",
+           False, _running_config),
 ]
 
 MODULES_BY_ID: dict[str, Module] = {m.id: m for m in MODULES}

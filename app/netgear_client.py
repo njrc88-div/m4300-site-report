@@ -211,6 +211,25 @@ class NetgearClient:
         data = await self._request("GET", "/fdbs")
         return _as_list(_unwrap(data, "fdb_stats", "fdbStats"))
 
+    # -- Running configuration export ----------------------------------------
+    # Documented for the M4250 API (not the M4300 doc set we started from),
+    # but real firmware doesn't reliably match either spec - callers should
+    # treat failure here as "not supported on this switch", not a hard error.
+
+    async def get_device_config(self, file: str = "running-config") -> list[str]:
+        data = await self._request("GET", "/device_config", params={"file": file})
+        wrapper = _unwrap(data, "Device-Config", "deviceConfig", "device_config")
+        if isinstance(wrapper, list):
+            return wrapper
+        if isinstance(wrapper, dict):
+            for key in ("Device-config", "Device-Config", "deviceConfig", "device_config"):
+                if key in wrapper:
+                    return wrapper[key]
+            for value in wrapper.values():
+                if isinstance(value, list):
+                    return value
+        return []
+
 
 def _as_list(data) -> list[dict]:
     """The spec is inconsistent about whether list endpoints return an
