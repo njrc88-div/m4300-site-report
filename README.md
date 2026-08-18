@@ -43,11 +43,22 @@ right after the cover page: a hierarchical diagram of switch-to-switch
 links built from LLDP data (`app/topology.py`), regardless of whether the
 LLDP Neighbors module was checked for the report body. Non-switch LLDP
 neighbors (APs, phones, etc.) are filtered out — only links between two
-switches that are both in the report are drawn. The switch with the most
-inter-switch links becomes the root; each connected group of switches is
-laid out as its own tree; any switch with no detected link to another
-switch in the report still gets shown, in an "unlinked" row at the
-bottom, rather than silently disappearing.
+switches that are both in the report are drawn. Layout flows left to
+right (root(s) at the left edge, each hop further right) rather than top
+to bottom, so a wide tier of many switches stacks down the page's height
+instead of being squeezed sideways into a fixed page width.
+
+Root selection: a switch pair with more than one physical LLDP link
+between them (a LAG - LLDP is per-port, so an aggregated link shows up as
+multiple neighbor entries between the same two switches) is treated as a
+collapsed/dual-core pair - both become roots, drawn side by side and
+connected by a bold "LAG ×N" loop rather than a single line. Otherwise
+the single switch with the most inter-switch links becomes the root.
+Each connected group of switches lays out as its own tree; any switch
+with no detected link to another switch in the report still gets shown,
+in an "unlinked" column, rather than silently disappearing. Labels that
+would otherwise collide - which happens when redundant/dual-homed links
+cross paths - get nudged apart automatically.
 
 ## Data pulled from the switch
 

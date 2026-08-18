@@ -14,7 +14,16 @@ actually attached to. If no LAG is found anywhere in the component, it
 falls back to a single root: the switch with the most inter-switch links.
 
 Any switch with no detected link to another switch in the report is still
-shown, in an "unlinked" row at the bottom, so nothing goes missing silently.
+shown, in an "unlinked" column, so nothing goes missing silently.
+
+Layout flows left to right - root(s) at the left edge, each hop further
+right - rather than top to bottom. An SVG embedded at width:100% always
+fills the page's horizontal space regardless of its declared viewBox size,
+so whichever axis carries "how many switches sit at this hop" ends up
+fighting for room inside a fixed page width if it's mapped to X. Mapping
+it to Y instead means it only competes for vertical space, which a tall
+portrait page has far more of - a tier of 6 switches stacks cleanly
+instead of being squeezed into narrow, label-colliding boxes.
 """
 from __future__ import annotations
 
@@ -30,12 +39,12 @@ GRAY_TEXT = "#605E5C"
 LINE_COLOR = "#9A9C9F"
 WHITE = "#FFFFFF"
 
+BOX_W = 175
 BOX_H = 46
-TIER_GAP_Y = 78
-MIN_BOX_W = 100
-MAX_BOX_W = 170
-BOX_GAP_X = 20
-MARGIN_X = 30
+TIER_GAP_X = 110   # horizontal space between one tier's boxes and the next
+NODE_GAP_Y = 18    # vertical space between stacked boxes within a tier
+COMPONENT_GAP_Y = 40
+LEFT_X = 20
 TOP_Y = 20
 
 
@@ -175,12 +184,6 @@ def _layout_tiers(
     return tiers, parent_of
 
 
-def _box_w_for_tier(count: int, canvas_w: float) -> float:
-    usable = canvas_w - 2 * MARGIN_X
-    ideal = (usable - (count - 1) * BOX_GAP_X) / count if count else usable
-    return max(MIN_BOX_W, min(MAX_BOX_W, ideal))
-
-
 def _truncate(text: str, max_chars: int) -> str:
     text = text or ""
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
@@ -204,7 +207,37 @@ def _switch_box(x: float, y: float, w: float, name: str, model: str, is_root: bo
     """
 
 
-def build_switch_topology(switches: list[dict], canvas_w: float = 700) -> str | None:
+def _resolve_label_collisions(
+    labels: list[tuple[float, float, float, str, bool]],
+) -> list[tuple[float, float, float, str, bool]]:
+    """Nudge label Y positions apart when their boxes would overlap.
+
+    Redundant/dual-homed links cross paths, and two edges' midpoints can
+    end up close together even though the lines themselves go to different
+    boxes. Moving the label off the exact line midpoint is a normal
+    diagramming trick and reads better than overlapping, unreadable text.
+    """
+    label_h = 13
+    placed: list[tuple[float, float, float, str, bool]] = []
+    for mx, my, w, label, is_lag in sorted(labels, key=lambda t: (t[0], t[1])):
+        y = my
+        for _ in range(20):
+            collision = next(
+                (
+                    p for p in placed
+                    if abs(p[0] - mx) < (w + p[2]) / 2
+                    and abs(p[1] - y) < label_h + 2
+                ),
+                None,
+            )
+            if not collision:
+                break
+            y = collision[1] + label_h + 2
+        placed.append((mx, y, w, label, is_lag))
+    return placed
+
+
+def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str, "neighbors": [...]}]"""
     if len(switches) < 2:
         return None
@@ -219,7 +252,8 @@ def build_switch_topology(switches: list[dict], canvas_w: float = 700) -> str | 
         return None
 
     positions: dict[str, tuple[float, float, float]] = {}  # name -> (x, y, w)
-    cursor_y = TOP_Y
+    band_top = TOP_Y
+    max_x_reached = 0.0
     root_names: set[str] = set()
 
     for component in components:
@@ -232,46 +266,51 @@ def build_switch_topology(switches: list[dict], canvas_w: float = 700) -> str | 
         root_pair_key = frozenset(roots) if len(roots) == 2 else None
         root_pair_is_lag = bool(root_pair_key and _link_count(edges.get(root_pair_key, {"a_ports": [], "b_ports": []})) > 1)
 
-        prev_tier_x: dict[str, float] = {}
+        def gap_for(tier_index: int) -> float:
+            return 70 if (tier_index == 0 and root_pair_is_lag) else NODE_GAP_Y
+
+        # First pass: each tier's column height, so shorter tiers can be
+        # centered against the tallest one in this component.
+        tier_heights = [
+            len(t) * BOX_H + max(0, len(t) - 1) * gap_for(i) for i, t in enumerate(tiers)
+        ]
+        band_height = max(tier_heights) if tier_heights else BOX_H
+
+        prev_tier_y: dict[str, float] = {}
+        x = LEFT_X
         for tier_index, tier_nodes in enumerate(tiers):
-            if prev_tier_x:
-                # Group children under their parent's horizontal position so
+            if prev_tier_y:
+                # Group children under their parent's vertical position so
                 # each co-root's subtree visually clusters on its own side.
                 tier_nodes = sorted(
                     tier_nodes,
-                    key=lambda n: (prev_tier_x.get(parent_of.get(n), 0), n),
+                    key=lambda n: (prev_tier_y.get(parent_of.get(n), 0), n),
                 )
-            gap = 90 if (tier_index == 0 and root_pair_is_lag) else BOX_GAP_X
-            box_w = _box_w_for_tier(len(tier_nodes), canvas_w)
-            total_w = len(tier_nodes) * box_w + (len(tier_nodes) - 1) * gap
-            start_x = (canvas_w - total_w) / 2
-            this_tier_x: dict[str, float] = {}
+            gap = gap_for(tier_index)
+            this_h = tier_heights[tier_index]
+            start_y = band_top + (band_height - this_h) / 2
+            this_tier_y: dict[str, float] = {}
             for i, name in enumerate(tier_nodes):
-                x = start_x + i * (box_w + gap)
-                positions[name] = (x, cursor_y, box_w)
-                this_tier_x[name] = x + box_w / 2
-            prev_tier_x = this_tier_x
-            cursor_y += BOX_H + TIER_GAP_Y
-        cursor_y += 30  # gap between separate components
+                y = start_y + i * (BOX_H + gap)
+                positions[name] = (x, y, BOX_W)
+                this_tier_y[name] = y + BOX_H / 2
+            prev_tier_y = this_tier_y
+            max_x_reached = max(max_x_reached, x + BOX_W)
+            x += BOX_W + TIER_GAP_X
+        band_top += band_height + COMPONENT_GAP_Y
 
-    unlinked_y = None
-    row_count = 1
+    unlinked_label_y = None
     if unlinked:
-        box_w = _box_w_for_tier(min(len(unlinked), 5), canvas_w)
-        row_count = min(len(unlinked), max(1, int((canvas_w - 2 * MARGIN_X) // (box_w + BOX_GAP_X))))
-        unlinked_y = cursor_y
-        row = 0
-        for i, name in enumerate(unlinked):
-            row, col = divmod(i, row_count)
-            row_len = min(row_count, len(unlinked) - row * row_count)
-            total_w_row = row_len * box_w + (row_len - 1) * BOX_GAP_X
-            start_x = (canvas_w - total_w_row) / 2
-            x = start_x + col * (box_w + BOX_GAP_X)
-            y = unlinked_y + row * (BOX_H + 24)
-            positions[name] = (x, y, box_w)
-        cursor_y = unlinked_y + (row + 1) * (BOX_H + 24)
+        unlinked_label_y = band_top
+        y = band_top + 16
+        for name in unlinked:
+            positions[name] = (LEFT_X, y, BOX_W)
+            max_x_reached = max(max_x_reached, LEFT_X + BOX_W)
+            y += BOX_H + NODE_GAP_Y
+        band_top = y
 
-    canvas_h = cursor_y + 10
+    canvas_w = max_x_reached + 30
+    canvas_h = band_top + 10
 
     svg_parts = [
         f'<svg width="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
@@ -280,37 +319,63 @@ def build_switch_topology(switches: list[dict], canvas_w: float = 700) -> str | 
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
     ]
 
-    # connector lines first, so boxes sit visually on top of the line ends
+    # Connector lines are drawn immediately (boxes get drawn on top of their
+    # ends afterwards). Labels are collected and placed in a second pass,
+    # after lines, so overlapping labels - which happen when redundant/
+    # dual-homed links cross paths - can be nudged apart from each other.
+    pending_labels: list[tuple[float, float, float, str, bool]] = []  # (mx, my, w, label, is_lag)
+
     for key, edge in edges.items():
         a, b = tuple(key)
         if a not in positions or b not in positions:
             continue
         ax, ay, aw = positions[a]
         bx, by, bw = positions[b]
-        x1, y1 = ax + aw / 2, ay + BOX_H
-        x2, y2 = bx + bw / 2, by
-        if abs(y1 - y2) < 1:  # same row (unlinked grid, or a co-root pair)
-            if ax <= bx:
-                x1, y1 = ax + aw, ay + BOX_H / 2
-                x2, y2 = bx, by + BOX_H / 2
+        x1, y1 = ax + aw, ay + BOX_H / 2
+        x2, y2 = bx, by + BOX_H / 2
+        if abs(x1 - x2) < 1:  # same column (co-root pair stacked vertically)
+            if ay <= by:
+                x1, y1 = ax + aw / 2, ay + BOX_H
+                x2, y2 = bx + bw / 2, by
             else:
-                x1, y1 = ax, ay + BOX_H / 2
-                x2, y2 = bx + bw, by + BOX_H / 2
+                x1, y1 = ax + aw / 2, ay
+                x2, y2 = bx + bw / 2, by + BOX_H
 
         count = _link_count(edge)
         is_lag = count > 1
         label = f"LAG ×{count}" if is_lag else (
             f"{(edge['a_ports'] or ['?'])[0]} ↔ {(edge['b_ports'] or ['?'])[0]}"
         )
-        stroke = TEAL if is_lag else LINE_COLOR
-        width = 3 if is_lag else 1.5
-
         mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        svg_parts.append(
-            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-            f'stroke="{stroke}" stroke-width="{width}"/>'
-        )
+
+        if is_lag:
+            # Two links bowing apart into a lens/loop shape - the standard
+            # way network diagrams depict an aggregated/redundant link,
+            # rather than a single line that reads as one physical cable.
+            dx, dy = x2 - x1, y2 - y1
+            length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+            px, py = -dy / length, dx / length
+            bow = 10
+            c1x, c1y = mx + px * bow, my + py * bow
+            c2x, c2y = mx - px * bow, my - py * bow
+            svg_parts.append(
+                f'<path d="M {x1:.1f} {y1:.1f} Q {c1x:.1f} {c1y:.1f} {x2:.1f} {y2:.1f}" '
+                f'fill="none" stroke="{TEAL}" stroke-width="2"/>'
+            )
+            svg_parts.append(
+                f'<path d="M {x1:.1f} {y1:.1f} Q {c2x:.1f} {c2y:.1f} {x2:.1f} {y2:.1f}" '
+                f'fill="none" stroke="{TEAL}" stroke-width="2"/>'
+            )
+        else:
+            svg_parts.append(
+                f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                f'stroke="{LINE_COLOR}" stroke-width="1.5"/>'
+            )
+
         label_w = 26 + len(label) * 4.3
+        pending_labels.append((mx, my, label_w, label, is_lag))
+
+    for mx, my, label_w, label, is_lag in _resolve_label_collisions(pending_labels):
         svg_parts.append(
             f'<rect x="{mx - label_w / 2:.1f}" y="{my - 9:.1f}" width="{label_w:.1f}" height="13" fill="{WHITE}"/>'
             f'<text x="{mx:.1f}" y="{my + 1:.1f}" text-anchor="middle" '
@@ -323,9 +388,9 @@ def build_switch_topology(switches: list[dict], canvas_w: float = 700) -> str | 
         sw = by_name[name]
         svg_parts.append(_switch_box(x, y, w, name, sw.get("model") or "", name in root_names))
 
-    if unlinked_y is not None:
+    if unlinked_label_y is not None:
         svg_parts.append(
-            f'<text x="{MARGIN_X}" y="{unlinked_y - 10:.1f}" '
+            f'<text x="{LEFT_X}" y="{unlinked_label_y + 10:.1f}" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="8.5" '
             f'font-style="italic" fill="{GRAY_TEXT}">'
             "No inter-switch link detected for these:</text>"
