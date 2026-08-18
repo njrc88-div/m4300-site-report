@@ -26,6 +26,7 @@ def render_report_pdf(
     report_date: str,
     modules: list[Module],
     switch_results: list[dict],
+    topology_svg: str | None = None,
 ) -> bytes:
     template = _env.get_template("report.html")
     html = template.render(
@@ -37,5 +38,6 @@ def render_report_pdf(
         modules=modules,
         switches=switch_results,
         logo_path=LOGO_PATH,
+        topology_svg=topology_svg,
     )
     return HTML(string=html, base_url=str(APP_DIR)).write_pdf()

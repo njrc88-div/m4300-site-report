@@ -38,6 +38,17 @@ The app has three tabs:
    styled with Diversified branding (cover page, page numbers, section
    layout) — nothing is saved server-side.
 
+When a report covers 2+ switches, a **site topology** page is inserted
+right after the cover page: a hierarchical diagram of switch-to-switch
+links built from LLDP data (`app/topology.py`), regardless of whether the
+LLDP Neighbors module was checked for the report body. Non-switch LLDP
+neighbors (APs, phones, etc.) are filtered out — only links between two
+switches that are both in the report are drawn. The switch with the most
+inter-switch links becomes the root; each connected group of switches is
+laid out as its own tree; any switch with no detected link to another
+switch in the report still gets shown, in an "unlinked" row at the
+bottom, rather than silently disappearing.
+
 ## Data pulled from the switch
 
 | Module | Source endpoints |

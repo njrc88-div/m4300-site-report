@@ -18,6 +18,7 @@ from .models import (
 from .modules import MODULES, MODULES_BY_ID
 from .netgear_client import NetgearAPIError, NetgearClient
 from .report import render_report_pdf
+from .topology import build_switch_topology
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("m4300_report")
@@ -103,7 +104,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
 
     switch_results = []
     for switch in req.switches:
-        entry: dict = {"switch": switch, "error": None, "modules": {}}
+        entry: dict = {"switch": switch, "error": None, "modules": {}, "_lldp_neighbors": []}
         try:
             async with _client_for(switch) as client:
                 # Always pull device_info first - every section header needs it,
@@ -115,10 +116,31 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
                     except Exception as exc:
                         logger.warning("Module %s failed for %s: %s", module.id, switch.host, exc)
                         entry["modules"][module.id] = {"error": str(exc)}
+                # Also pull LLDP data for the topology diagram even if the
+                # LLDP Neighbors module itself wasn't selected for the report body.
+                lldp_result = entry["modules"].get("lldp")
+                if lldp_result is not None and not lldp_result.get("error"):
+                    entry["_lldp_neighbors"] = lldp_result.get("neighbors", [])
+                else:
+                    try:
+                        entry["_lldp_neighbors"] = await client.get_lldp_neighbors()
+                    except Exception as exc:
+                        logger.warning("Topology LLDP fetch failed for %s: %s", switch.host, exc)
         except Exception as exc:
             logger.warning("Switch %s unreachable: %s", switch.host, exc)
             entry["error"] = str(exc)
         switch_results.append(entry)
+
+    topology_svg = build_switch_topology([
+        {
+            "name": r["switch"].name,
+            "mac": (r.get("device_info") or {}).get("macAddr"),
+            "model": (r.get("device_info") or {}).get("model", ""),
+            "neighbors": r.get("_lldp_neighbors") or [],
+        }
+        for r in switch_results
+        if not r["error"]
+    ])
 
     pdf_bytes = render_report_pdf(
         site_name=req.site_name,
@@ -128,6 +150,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
         report_date=date.today().strftime("%d %B %Y"),
         modules=selected_modules,
         switch_results=switch_results,
+        topology_svg=topology_svg,
     )
 
     filename = f"{req.site_name or 'site'}-switch-report.pdf".replace(" ", "-")
