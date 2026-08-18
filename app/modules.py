@@ -26,8 +26,28 @@ class Module:
     fetch: FetchFn
 
 
+def _fan_status_text(fan_state) -> str:
+    """fanState varies by firmware: a plain string on some, or a list
+    containing one {fan_name: status} dict per fan module on others."""
+    if not fan_state:
+        return "-"
+    if isinstance(fan_state, str):
+        return fan_state
+    if isinstance(fan_state, list):
+        parts = []
+        for item in fan_state:
+            if isinstance(item, dict):
+                parts.extend(f"{name}: {status}" for name, status in item.items())
+            else:
+                parts.append(str(item))
+        return ", ".join(parts) if parts else "-"
+    return str(fan_state)
+
+
 async def _device_info(client: NetgearClient) -> dict:
-    return await client.get_device_info()
+    info = dict(await client.get_device_info())
+    info["fanState_text"] = _fan_status_text(info.get("fanState"))
+    return info
 
 
 async def _firmware(client: NetgearClient) -> dict:
@@ -157,6 +177,14 @@ async def _lldp(client: NetgearClient) -> dict:
         n["chassis_subtype_text"] = enums.decode(
             enums.CHASSIS_ID_SUBTYPE, n.get("chassisIdSubtype")
         )
+        # Prefer the neighbor's advertised system name over its raw chassis
+        # ID (usually a MAC) - fall back through what's actually populated.
+        n["neighbor_name"] = n.get("remoteSysName") or n.get("chassisId") or "-"
+        n["neighbor_port"] = n.get("remotePortDesc") or n.get("remotePortId") or "-"
+        mgmt_addrs = n.get("mgmtAddresses") or []
+        if isinstance(mgmt_addrs, dict):
+            mgmt_addrs = [mgmt_addrs]
+        n["mgmt_ip"] = next((a.get("address") for a in mgmt_addrs if a.get("address")), "-")
         decorated.append(n)
     return {"neighbors": decorated}
 

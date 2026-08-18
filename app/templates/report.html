@@ -155,7 +155,7 @@
         <tr><td class="k">Total / Active Ports</td><td>{{ data.numOfPorts or '-' }} / {{ data.numOfActivePorts or '-' }}</td></tr>
         <tr><td class="k">CPU Usage</td><td>{{ data.cpuUsage or '-' }}</td></tr>
         <tr><td class="k">Memory Usage</td><td>{{ data.memoryUsage or '-' }} ({{ data.memoryUsed or '-' }})</td></tr>
-        <tr><td class="k">Fan Status</td><td>{{ data.fanState or '-' }}</td></tr>
+        <tr><td class="k">Fan Status</td><td>{{ data.fanState_text or '-' }}</td></tr>
         <tr><td class="k">PoE Capable</td><td>{{ 'Yes' if data.poeState else 'No' }}</td></tr>
       </table>
       {% if data.temperatureSensors %}
@@ -310,13 +310,14 @@
     {% elif module.id == 'lldp' %}
       {% if data.neighbors %}
       <table class="data">
-        <tr><th>Local Interface</th><th>Neighbor Chassis ID</th><th>Neighbor Port</th><th>Management IP</th></tr>
+        <tr><th>Local Interface</th><th>Neighbor</th><th>Neighbor Port</th><th>Management IP</th><th>Chassis ID</th></tr>
         {% for n in data.neighbors %}
         <tr>
           <td>{{ n.ifIndex or '-' }}</td>
+          <td>{{ n.neighbor_name }}</td>
+          <td>{{ n.neighbor_port }}</td>
+          <td>{{ n.mgmt_ip }}</td>
           <td>{{ n.chassisId or '-' }} <span class="empty-note">({{ n.chassis_subtype_text }})</span></td>
-          <td>{{ n.remotePortId or '-' }}</td>
-          <td>{{ n.mgmtIpAddress or '-' }}</td>
         </tr>
         {% endfor %}
       </table>
