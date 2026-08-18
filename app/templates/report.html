@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ site_name }} - Switch Report</title>
+<style>
+  @page {
+    size: A4;
+    margin: 2.2cm 1.6cm 2cm 1.6cm;
+    @bottom-center {
+      content: "Diversified  |  " counter(page) " of " counter(pages);
+      font-family: "Liberation Sans", Arial, sans-serif;
+      font-size: 8pt;
+      color: #888B8D;
+    }
+  }
+  @page cover {
+    margin: 0;
+    @bottom-center { content: none; }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+    color: #080E2B;
+    font-size: 9.5pt;
+    line-height: 1.4;
+  }
+
+  /* ---------- Cover page ---------- */
+  .cover {
+    page: cover;
+    height: 29.7cm;
+    width: 21cm;
+    position: relative;
+    background: linear-gradient(160deg, #001E62 0%, #10069F 65%, #0762C8 100%);
+    color: #ffffff;
+  }
+  .cover .logo { position: absolute; top: 2.2cm; left: 1.8cm; width: 6.2cm; }
+  .cover .band { position: absolute; top: 0; left: 0; width: 100%; height: 0.35cm; background: #00BFB2; }
+  .cover .title-block { position: absolute; top: 12cm; left: 1.8cm; right: 1.8cm; }
+  .cover .kicker { font-size: 11pt; letter-spacing: 0.12em; text-transform: uppercase; color: #71DBD4; margin-bottom: 0.4cm; }
+  .cover h1 { font-size: 30pt; margin: 0 0 0.3cm 0; font-weight: 700; }
+  .cover .subtitle { font-size: 14pt; color: #D9D9D6; margin-bottom: 1.2cm; }
+  .cover .meta-table { font-size: 10.5pt; border-collapse: collapse; }
+  .cover .meta-table td { padding: 0.15cm 0.6cm 0.15cm 0; vertical-align: top; }
+  .cover .meta-table td.k { color: #71DBD4; text-transform: uppercase; font-size: 8pt; letter-spacing: 0.08em; }
+  .cover .footer-note { position: absolute; bottom: 1.5cm; left: 1.8cm; right: 1.8cm; font-size: 8pt; color: #B1B3B3; }
+
+  /* ---------- Headings ---------- */
+  h2.switch-title {
+    color: #001E62;
+    font-size: 17pt;
+    border-bottom: 2pt solid #00BFB2;
+    padding-bottom: 0.15cm;
+    margin-top: 0;
+    margin-bottom: 0.3cm;
+    page-break-before: always;
+  }
+  .switch-subtitle { color: #605E5C; font-size: 9.5pt; margin-bottom: 0.5cm; }
+  h3.section-title {
+    color: #10069F;
+    font-size: 12pt;
+    margin-top: 0.7cm;
+    margin-bottom: 0.25cm;
+    border-left: 4pt solid #00BFB2;
+    padding-left: 0.2cm;
+  }
+  .error-banner {
+    background: #FDECEC; border: 1pt solid #D64545; color: #7A1F1F;
+    padding: 0.3cm 0.4cm; border-radius: 3pt; margin: 0.3cm 0;
+    font-size: 9pt;
+  }
+  .module-error { color: #7A1F1F; font-size: 8.5pt; font-style: italic; }
+  .empty-note { color: #888B8D; font-size: 8.5pt; font-style: italic; }
+
+  /* ---------- Tables ---------- */
+  table.data { width: 100%; border-collapse: collapse; margin-bottom: 0.35cm; font-size: 8.3pt; }
+  table.data th {
+    background: #001E62; color: #ffffff; text-align: left;
+    padding: 0.16cm 0.22cm; font-weight: 600; font-size: 8pt;
+  }
+  table.data td { padding: 0.14cm 0.22cm; border-bottom: 0.5pt solid #D9D9D6; vertical-align: top; }
+  table.data tr:nth-child(even) td { background: #F5F6F8; }
+  table.kv { width: 100%; border-collapse: collapse; margin-bottom: 0.35cm; }
+  table.kv td { padding: 0.12cm 0.25cm; font-size: 9pt; border-bottom: 0.5pt solid #EDEEEF; }
+  table.kv td.k { color: #605E5C; width: 38%; font-weight: 600; }
+  .badge { display: inline-block; padding: 0.03cm 0.18cm; border-radius: 3pt; font-size: 7.8pt; font-weight: 600; }
+  .badge.up { background: #E3F7EE; color: #147A4B; }
+  .badge.down { background: #FDECEC; color: #B02A2A; }
+  .badge.neutral { background: #EEF0F5; color: #43485B; }
+  .vlan-block { margin-bottom: 0.4cm; border: 0.5pt solid #D9D9D6; border-radius: 3pt; padding: 0.25cm; }
+  .vlan-block h4 { margin: 0 0 0.15cm 0; color: #001E62; font-size: 10pt; }
+  .notes-block { background: #F5F6F8; border-left: 3pt solid #00BFB2; padding: 0.3cm 0.4cm; font-size: 9pt; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<!-- ===================== COVER PAGE ===================== -->
+<div class="cover">
+  <div class="band"></div>
+  <img class="logo" src="{{ logo_path }}" alt="Diversified">
+  <div class="title-block">
+    <div class="kicker">Network Infrastructure Site Report</div>
+    <h1>{{ site_name }}</h1>
+    <div class="subtitle">NETGEAR M4300 Switch Configuration &amp; Status</div>
+    <table class="meta-table">
+      {% if client_name %}<tr><td class="k">Client</td><td>{{ client_name }}</td></tr>{% endif %}
+      <tr><td class="k">Report Date</td><td>{{ report_date }}</td></tr>
+      {% if prepared_by %}<tr><td class="k">Prepared By</td><td>{{ prepared_by }}</td></tr>{% endif %}
+      <tr><td class="k">Switches Covered</td><td>{{ switches|length }}</td></tr>
+    </table>
+  </div>
+  {% if notes %}
+  <div class="footer-note">{{ notes }}</div>
+  {% endif %}
+</div>
+
+<!-- ===================== PER-SWITCH SECTIONS ===================== -->
+{% for entry in switches %}
+{% set sw = entry.switch %}
+<h2 class="switch-title">{{ sw.name }}</h2>
+<div class="switch-subtitle">
+  {{ sw.host }}:{{ sw.port }}
+  {% if entry.device_info %}
+    &nbsp;&middot;&nbsp; {{ entry.device_info.model or "Unknown model" }}
+    &nbsp;&middot;&nbsp; Firmware {{ entry.device_info.swVer or "-" }}
+    &nbsp;&middot;&nbsp; S/N {{ entry.device_info.serialNumber or "-" }}
+  {% endif %}
+</div>
+
+{% if entry.error %}
+  <div class="error-banner"><strong>Could not connect to this switch.</strong><br>{{ entry.error }}</div>
+{% else %}
+
+  {% for module in modules %}
+    {% set data = entry.modules.get(module.id) %}
+    <h3 class="section-title">{{ module.label }}</h3>
+    {% if data is none %}
+      <div class="empty-note">No data collected for this module.</div>
+    {% elif data.error %}
+      <div class="module-error">Could not retrieve this data: {{ data.error }}</div>
+
+    {% elif module.id == 'device_info' %}
+      <table class="kv">
+        <tr><td class="k">Display Name</td><td>{{ data.name or '-' }}</td></tr>
+        <tr><td class="k">Model</td><td>{{ data.model or '-' }}</td></tr>
+        <tr><td class="k">Serial Number</td><td>{{ data.serialNumber or '-' }}</td></tr>
+        <tr><td class="k">MAC Address</td><td>{{ data.macAddr or '-' }}</td></tr>
+        <tr><td class="k">Management IP</td><td>{{ data.lanIpAddress or '-' }}</td></tr>
+        <tr><td class="k">Firmware Version</td><td>{{ data.swVer or '-' }}</td></tr>
+        <tr><td class="k">Boot Version</td><td>{{ data.bootVersion or '-' }}</td></tr>
+        <tr><td class="k">Uptime</td><td>{{ data.upTime or '-' }}</td></tr>
+        <tr><td class="k">Last Reboot</td><td>{{ data.lastReboot or '-' }}</td></tr>
+        <tr><td class="k">Total / Active Ports</td><td>{{ data.numOfPorts or '-' }} / {{ data.numOfActivePorts or '-' }}</td></tr>
+        <tr><td class="k">CPU Usage</td><td>{{ data.cpuUsage or '-' }}</td></tr>
+        <tr><td class="k">Memory Usage</td><td>{{ data.memoryUsage or '-' }} ({{ data.memoryUsed or '-' }})</td></tr>
+        <tr><td class="k">Fan Status</td><td>{{ data.fanState or '-' }}</td></tr>
+        <tr><td class="k">PoE Capable</td><td>{{ 'Yes' if data.poeState else 'No' }}</td></tr>
+      </table>
+      {% if data.temperatureSensors %}
+        <table class="data">
+          <tr><th>Sensor #</th><th>Description</th><th>Temp (&deg;C)</th></tr>
+          {% for t in (data.temperatureSensors if data.temperatureSensors is iterable and data.temperatureSensors is not mapping else [data.temperatureSensors]) %}
+          <tr><td>{{ t.sensorNum }}</td><td>{{ t.sensorDesc }}</td><td>{{ t.sensorTemp }}</td></tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+
+    {% elif module.id == 'firmware' %}
+      <table class="kv">
+        <tr><td class="k">Active Image</td><td>{{ data.dual_image.activatedImgLabel or '-' }}</td></tr>
+        <tr><td class="k">Image 1 Version</td><td>{{ data.dual_image.image1Version or '-' }} ({{ data.dual_image.image1Label or '-' }})</td></tr>
+        <tr><td class="k">Image 2 Version</td><td>{{ data.dual_image.image2Version or '-' }} ({{ data.dual_image.image2Label or '-' }})</td></tr>
+        <tr><td class="k">Active Image Description</td><td>{{ data.active_image.imageDescr or '-' }}</td></tr>
+      </table>
+
+    {% elif module.id == 'identity' %}
+      <table class="kv">
+        <tr><td class="k">System Name</td><td>{{ data.rfc1213.sysName or '-' }}</td></tr>
+        <tr><td class="k">Description</td><td>{{ data.rfc1213.sysDescr or '-' }}</td></tr>
+        <tr><td class="k">Location</td><td>{{ data.rfc1213.sysLocation or '-' }}</td></tr>
+        <tr><td class="k">Contact</td><td>{{ data.rfc1213.sysContact or '-' }}</td></tr>
+        <tr><td class="k">Console Access</td><td>{{ data.system_config.sysAccessLine or '-' }}</td></tr>
+        <tr><td class="k">Telnet Server</td><td>{{ data.system_config.sysTelnetServerAdminMode or '-' }}</td></tr>
+      </table>
+
+    {% elif module.id == 'ports' %}
+      <table class="data">
+        <tr>
+          <th>Port</th><th>Description</th><th>Status</th><th>Speed</th><th>Duplex</th><th>Mode</th>
+          <th>PoE</th><th>VLANs</th><th>Rx / Tx</th><th>LLDP Neighbor</th>
+        </tr>
+        {% for p in data.ports %}
+        <tr>
+          <td>{{ p.portId }}</td>
+          <td>{{ p.myDesc or '-' }}</td>
+          <td><span class="badge {{ 'up' if p.status == 0 else 'down' }}">{{ p.status_text }}</span></td>
+          <td>{{ p.speed_text }}</td>
+          <td>{{ p.duplex_text }}</td>
+          <td>{{ p.mode_text }}</td>
+          <td>{{ p.poe_status_text }}</td>
+          <td>{{ (p.vlans or [])|join(', ') }}</td>
+          <td>{{ p.rxMbps or 0 }} / {{ p.txMbps or 0 }} Mbps</td>
+          <td>
+            {% if p.neighborInfo and p.neighborInfo.name %}
+              {{ p.neighborInfo.name }}{% if p.neighborInfo.portId %} ({{ p.neighborInfo.portId }}){% endif %}
+            {% else %}-{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+
+    {% elif module.id == 'port_config' %}
+      <table class="data">
+        <tr><th>Port</th><th>Description</th><th>Admin</th><th>Mode</th><th>Speed</th><th>PVID</th><th>Max Frame</th><th>PoE Capable</th></tr>
+        {% for c in data.port_configs %}
+        <tr>
+          <td>{{ c.ID }}</td>
+          <td>{{ c.description or '-' }}</td>
+          <td>{{ c.admin_text }}</td>
+          <td>{{ c.mode_text }}</td>
+          <td>{{ c.speed_text }}</td>
+          <td>{{ c.portVlanId }}</td>
+          <td>{{ c.maxFrameSize }}</td>
+          <td>{{ 'Yes' if c.isPoE else 'No' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+    {% elif module.id == 'poe' %}
+      <table class="kv">
+        <tr><td class="k">PSE Status</td><td>{{ data.global.pseMainOperationStatus or '-' }}</td></tr>
+        <tr><td class="k">Total Power Consumed</td><td>{{ data.global.totalPowerConsumedWatts or '0' }} W</td></tr>
+        <tr><td class="k">Power Management Mode</td><td>{{ data.global.powerManagmentMode or '-' }}</td></tr>
+        <tr><td class="k">PoE Firmware</td><td>{{ data.global.firmwareVersion or '-' }}</td></tr>
+      </table>
+      <table class="data">
+        <tr><th>Port</th><th>Enabled</th><th>Status</th><th>Class</th><th>Limit Mode</th><th>Power Used</th><th>Power Limit</th></tr>
+        {% for p in data.ports %}
+        <tr>
+          <td>{{ p.portid }}</td>
+          <td>{{ p.enabled_text }}</td>
+          <td>{{ p.status_text }}</td>
+          <td>{{ p.class_text }}</td>
+          <td>{{ p.limit_mode_text }}</td>
+          <td>{{ p.currentPower or 0 }} mW</td>
+          <td>{{ p.powerLimit or 0 }} mW</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+    {% elif module.id == 'lag' %}
+      {% if data.groups %}
+      <table class="data">
+        <tr><th>Group ID</th><th>Name</th><th>Type</th><th>Admin</th><th>Members</th></tr>
+        {% for g in data.groups %}
+        <tr>
+          <td>{{ g.groupId }}</td>
+          <td>{{ g.name or '-' }}</td>
+          <td>{{ g.type_text }}</td>
+          <td>{{ g.admin_text }}</td>
+          <td>{{ (g.members or [])|join(', ') }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="empty-note">No LAG groups configured.</div>{% endif %}
+
+    {% elif module.id == 'vlans' %}
+      {% for v in data.vlans %}
+      <div class="vlan-block">
+        <h4>VLAN {{ v.vlanId }} &mdash; {{ v.info.name or 'Unnamed' }}</h4>
+        <table class="kv">
+          <tr><td class="k">IGMP Snooping</td><td>{{ 'Enabled' if v.info.igmpConfig and v.info.igmpConfig.igmpState else 'Disabled' }}</td></tr>
+          <tr><td class="k">Voice VLAN</td><td>{{ 'Yes' if v.info.voiceVlanState else 'No' }}</td></tr>
+        </table>
+        {% if v.membership.portMembers %}
+        <table class="data">
+          <tr><th>Port</th><th>Tagged</th></tr>
+          {% for m in v.membership.portMembers %}
+          <tr><td>{{ m.port }}</td><td>{{ 'Tagged' if m.tagged else 'Untagged' }}</td></tr>
+          {% endfor %}
+        </table>
+        {% else %}<div class="empty-note">No physical port membership reported.</div>{% endif %}
+      </div>
+      {% else %}<div class="empty-note">No VLANs discovered.</div>{% endfor %}
+
+    {% elif module.id == 'stp' %}
+      <table class="kv">
+        <tr><td class="k">Status</td><td>{{ data.global.status_text }}</td></tr>
+        <tr><td class="k">Mode</td><td>{{ data.global.mode_text }}</td></tr>
+        <tr><td class="k">Root Bridge Priority</td><td>{{ data.global.rootBridgePriority }}</td></tr>
+        <tr><td class="k">Root Bridge ID</td><td>{{ data.global.rootBridgeId or '-' }}</td></tr>
+      </table>
+      {% if data.interfaces %}
+      <table class="data">
+        <tr><th>Interface</th><th>Guard Mode</th><th>Edge Port</th><th>BPDU Filter</th><th>BPDU Flood</th></tr>
+        {% for i in data.interfaces %}
+        <tr>
+          <td>{{ i.interface }}</td>
+          <td>{{ i.guard_text }}</td>
+          <td>{{ i.edge_text }}</td>
+          <td>{{ 'Yes' if i.bpduFilterMode else 'No' }}</td>
+          <td>{{ 'Yes' if i.bpduFloodMode else 'No' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+
+    {% elif module.id == 'lldp' %}
+      {% if data.neighbors %}
+      <table class="data">
+        <tr><th>Local Interface</th><th>Neighbor Chassis ID</th><th>Neighbor Port</th><th>Management IP</th></tr>
+        {% for n in data.neighbors %}
+        <tr>
+          <td>{{ n.ifIndex or '-' }}</td>
+          <td>{{ n.chassisId or '-' }} <span class="empty-note">({{ n.chassis_subtype_text }})</span></td>
+          <td>{{ n.remotePortId or '-' }}</td>
+          <td>{{ n.mgmtIpAddress or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="empty-note">No LLDP neighbors detected.</div>{% endif %}
+
+    {% elif module.id == 'fiber' %}
+      {% if data.modules %}
+      <table class="data">
+        <tr><th>Port</th><th>Vendor</th><th>Part Number</th><th>Temp (&deg;C)</th><th>Voltage</th><th>Tx Power (dBm)</th><th>Rx Power (dBm)</th><th>Fault</th></tr>
+        {% for f in data.modules %}
+        <tr>
+          <td>{{ f.port }}</td>
+          <td>{{ f.vendorName or '-' }}</td>
+          <td>{{ f.partNumber or '-' }}</td>
+          <td>{{ f.temp or '-' }}</td>
+          <td>{{ f.voltage or '-' }}</td>
+          <td>{{ f.outputPower or '-' }}</td>
+          <td>{{ f.inputPower or '-' }}</td>
+          <td>{{ f.faultStatus or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="empty-note">No fiber/SFP modules detected.</div>{% endif %}
+
+    {% elif module.id == 'fdb' %}
+      {% if data.entries %}
+      <table class="data">
+        <tr><th>Interface</th><th>VLAN</th><th>MAC Address</th><th>Type</th></tr>
+        {% for e in data.entries[:200] %}
+        <tr><td>{{ e.interface }}</td><td>{{ e.vlanId }}</td><td>{{ e.mac }}</td><td>{{ e.entry_type_text }}</td></tr>
+        {% endfor %}
+      </table>
+      {% if data.entries|length > 200 %}
+        <div class="empty-note">Showing first 200 of {{ data.entries|length }} entries.</div>
+      {% endif %}
+      {% else %}<div class="empty-note">No FDB entries reported.</div>{% endif %}
+
+    {% else %}
+      <div class="empty-note">Unrecognized module.</div>
+    {% endif %}
+  {% endfor %}
+
+{% endif %}
+{% endfor %}
+
+</body>
+</html>

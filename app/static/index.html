@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M4300 Site Report Generator</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <img src="/static/img/diversified-mark.png" alt="Diversified">
+  <div>
+    <div class="title">M4300 Site Report Generator</div>
+    <div class="subtitle">NETGEAR M4300 REST API &rarr; branded PDF site report</div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="switches">1. Switches</button>
+  <button class="tab-btn" data-tab="explorer">2. Data Explorer</button>
+  <button class="tab-btn" data-tab="builder">3. Report Builder</button>
+</nav>
+
+<main>
+
+  <!-- ===================== SWITCHES ===================== -->
+  <section id="panel-switches" class="panel active">
+    <div class="card">
+      <h2>Switch Inventory</h2>
+      <p class="hint">
+        Add every switch at this site. Credentials stay in this browser only (localStorage) &mdash;
+        they are sent to this app's backend only when you click Test, Fetch, or Generate, and are
+        never written to disk on the server.
+      </p>
+      <table class="switch-table" id="switch-table">
+        <thead>
+          <tr>
+            <th style="width:16%">Label</th>
+            <th style="width:16%">Host / IP</th>
+            <th style="width:8%">Port</th>
+            <th style="width:14%">Username</th>
+            <th style="width:14%">Password</th>
+            <th style="width:8%">Verify TLS</th>
+            <th style="width:14%">Status</th>
+            <th style="width:10%"></th>
+          </tr>
+        </thead>
+        <tbody id="switch-tbody"></tbody>
+      </table>
+      <div style="margin-top:0.8rem; display:flex; gap:0.6rem;">
+        <button class="btn secondary" id="add-switch-btn">+ Add Switch</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== EXPLORER ===================== -->
+  <section id="panel-explorer" class="panel">
+    <div class="card">
+      <h2>Ad-hoc Data Explorer</h2>
+      <p class="hint">Pull live data from a single switch to inspect it before building a report.</p>
+      <div class="explore-controls">
+        <div class="field">
+          <label>Switch</label>
+          <select id="explore-switch"></select>
+        </div>
+        <div class="field">
+          <label>Data Module</label>
+          <select id="explore-module"></select>
+        </div>
+        <button class="btn" id="explore-fetch-btn">Fetch</button>
+      </div>
+      <div id="explore-result"></div>
+    </div>
+  </section>
+
+  <!-- ===================== REPORT BUILDER ===================== -->
+  <section id="panel-builder" class="panel">
+    <div class="card">
+      <h2>Report Details</h2>
+      <div class="form-row">
+        <div class="field">
+          <label>Site Name *</label>
+          <input type="text" id="rb-site-name" placeholder="e.g. Goldman Sachs - Shoe Lane">
+        </div>
+        <div class="field">
+          <label>Client Name</label>
+          <input type="text" id="rb-client-name" placeholder="e.g. Goldman Sachs">
+        </div>
+        <div class="field">
+          <label>Prepared By</label>
+          <input type="text" id="rb-prepared-by" placeholder="Your name">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Notes (shown on cover page)</label>
+          <textarea id="rb-notes" placeholder="Optional context for this report"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Switches to Include</h2>
+      <p class="hint">Click to toggle. Only switches with saved credentials appear here.</p>
+      <div class="switch-picker" id="rb-switch-picker"></div>
+    </div>
+
+    <div class="card">
+      <h2>Data to Include</h2>
+      <p class="hint">Choose what the client should see. FDB and per-port config are off by default because they're large.</p>
+      <div class="module-grid" id="rb-module-grid"></div>
+    </div>
+
+    <div class="card">
+      <button class="btn teal" id="rb-generate-btn">Generate PDF Report</button>
+      <span id="rb-status" style="margin-left:0.8rem; font-size:0.85rem; color:var(--gray-muted);"></span>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
