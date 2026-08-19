@@ -131,7 +131,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
             entry["error"] = str(exc)
         switch_results.append(entry)
 
-    topology = build_switch_topology([
+    topology_svg = build_switch_topology([
         {
             "name": r["switch"].name,
             "mac": (r.get("device_info") or {}).get("macAddr"),
@@ -150,7 +150,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
         report_date=date.today().strftime("%d %B %Y"),
         modules=selected_modules,
         switch_results=switch_results,
-        topology=topology,
+        topology_svg=topology_svg,
     )
 
     filename = f"{req.site_name or 'site'}-switch-report.pdf".replace(" ", "-")

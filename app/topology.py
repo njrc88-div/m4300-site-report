@@ -16,31 +16,19 @@ falls back to a single root: the switch with the most inter-switch links.
 Any switch with no detected link to another switch in the report is still
 shown, in an "unlinked" column, so nothing goes missing silently.
 
-Internally, the diagram is laid out left to right - root(s) at the left
-edge, each hop further right, switches within a hop stacked vertically -
-because that's the natural coordinate system for a hierarchy. The caller
-(report.py/report.html) then rotates the whole rendered graphic 90 degrees
-for placement on a portrait page: the diagram's left edge (the root)
-lands at the top of the page and its right edge (the deepest tier) lands
-at the bottom, so "how many switches sit at this hop" (the diagram's
-internal vertical extent) maps to the page's *width* after rotation and
-"how many hops deep" maps to the page's height - which a tall portrait
-page has far more of. This function only returns the unrotated diagram
-plus its natural width/height; the rotation itself is CSS, in the template.
+The diagram reads right to left: root/core switch(es) are pinned to the
+right edge, each hop toward the access layer sits further left, and
+switches within a hop are stacked vertically. Internally the tree is
+built left-to-right (the natural direction for BFS-from-root) and then
+mirrored horizontally as a final step - simplest way to keep the
+hierarchy/layout math untouched while flipping which edge the root lands
+on. Text stays upright throughout (no rotation applied to the graphic).
 """
 from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass
 from xml.sax.saxutils import escape
-
-
-@dataclass
-class TopologyDiagram:
-    svg: str
-    width: float   # natural (pre-rotation) size, in SVG user units == CSS px
-    height: float
 
 NAVY = "#001E62"
 TEAL = "#00BFB2"
@@ -248,7 +236,7 @@ def _resolve_label_collisions(
     return placed
 
 
-def build_switch_topology(switches: list[dict]) -> TopologyDiagram | None:
+def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str, "neighbors": [...]}]"""
     if len(switches) < 2:
         return None
@@ -323,8 +311,14 @@ def build_switch_topology(switches: list[dict]) -> TopologyDiagram | None:
     canvas_w = max_x_reached + 30
     canvas_h = band_top + 10
 
+    # Flip horizontally so the root(s) land on the right edge and the
+    # access layer on the left, instead of rebuilding the tier/BFS math
+    # mirrored - a straight x -> canvas_w - x - box_width remap of every
+    # already-computed position achieves the same result.
+    positions = {name: (canvas_w - x - w, y, w) for name, (x, y, w) in positions.items()}
+
     svg_parts = [
-        f'<svg width="100%" height="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
+        f'<svg width="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         'xmlns="http://www.w3.org/2000/svg" role="img">',
         "<title>Switch topology</title>",
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
@@ -408,4 +402,4 @@ def build_switch_topology(switches: list[dict]) -> TopologyDiagram | None:
         )
 
     svg_parts.append("</svg>")
-    return TopologyDiagram(svg="\n".join(svg_parts), width=canvas_w, height=canvas_h)
+    return "\n".join(svg_parts)

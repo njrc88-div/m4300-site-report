@@ -6,7 +6,6 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
 from .modules import Module
-from .topology import TopologyDiagram
 
 APP_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = APP_DIR / "templates"
@@ -16,25 +15,6 @@ _env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
     autoescape=select_autoescape(["html"]),
 )
-
-# Post-rotation budget on a portrait A4 page (content area, in CSS px/SVG
-# user units - this codebase treats the two as 1:1 throughout). The topology
-# diagram is drawn left-to-right internally, then rotated 90 degrees so its
-# left edge (root) lands at the page's top and its right edge (deepest tier)
-# lands at the bottom - see app/topology.py for why. That swaps which of the
-# diagram's natural dimensions needs to fit which page budget.
-_TOPOLOGY_MAX_POST_ROTATION_WIDTH = 660.0
-_TOPOLOGY_MAX_POST_ROTATION_HEIGHT = 900.0
-
-
-def _topology_css(topology: TopologyDiagram) -> dict:
-    scale = min(
-        _TOPOLOGY_MAX_POST_ROTATION_HEIGHT / topology.width,
-        _TOPOLOGY_MAX_POST_ROTATION_WIDTH / topology.height,
-        1.0,
-    )
-    pre_w, pre_h = topology.width * scale, topology.height * scale
-    return {"pre_w": pre_w, "pre_h": pre_h, "post_w": pre_h, "post_h": pre_w}
 
 
 def render_report_pdf(
@@ -46,7 +26,7 @@ def render_report_pdf(
     report_date: str,
     modules: list[Module],
     switch_results: list[dict],
-    topology: TopologyDiagram | None = None,
+    topology_svg: str | None = None,
 ) -> bytes:
     template = _env.get_template("report.html")
     html = template.render(
@@ -58,7 +38,6 @@ def render_report_pdf(
         modules=modules,
         switches=switch_results,
         logo_path=LOGO_PATH,
-        topology_svg=topology.svg if topology else None,
-        topology_css=_topology_css(topology) if topology else None,
+        topology_svg=topology_svg,
     )
     return HTML(string=html, base_url=str(APP_DIR)).write_pdf()
