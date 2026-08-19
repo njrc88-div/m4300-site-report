@@ -318,7 +318,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     positions = {name: (canvas_w - x - w, y, w) for name, (x, y, w) in positions.items()}
 
     svg_parts = [
-        f'<svg width="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
+        f'<svg width="100%" height="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         'xmlns="http://www.w3.org/2000/svg" role="img">',
         "<title>Switch topology</title>",
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
