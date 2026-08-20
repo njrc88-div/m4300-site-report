@@ -132,6 +132,24 @@ top-to-bottom, rotated 90 degrees the same as the switch boxes' own text,
 so the whole diagram shares one text orientation. A plain (non-LAG) link
 is one gray line with a single port label at each end.
 
+The legend is a second, small `<svg>` returned right after the main
+diagram (from the same `build_switch_topology()` call, appended as plain
+text after the closing `</svg>` tag) rather than an HTML block below it.
+Its three labels are rotated 90 degrees with the exact same
+`rotate(90 cx cy)` technique the diagram itself uses, so the legend
+genuinely reads top-to-bottom like every other piece of text in the
+diagram - CSS `writing-mode: vertical-rl` was tried first (no Python
+needed) but WeasyPrint collapsed each rotated label's reserved layout box
+to near-zero width instead of the tall-narrow footprint vertical text
+actually needs, overlapping every item. The diagram's own height budget
+(`TARGET_H`) leaves room, on the same page, for this fixed-size legend
+below it and the heading/subtitle above it - shrinking that budget enough
+to fit a legend without also starving the switch-name band's character
+budget (hostnames must still show in full, not just enough to be
+recognizable - see `_switch_box`) took tightening the hostname font size,
+`char_px`, and inter-node gap slightly, not just subtracting the legend's
+height from `TARGET_H` outright.
+
 Every individual physical line touching a box - not just every LAG as a
 whole - gets its own independent, evenly-spaced slot along that box's
 full edge (ordered by the other end's position, then by member index so

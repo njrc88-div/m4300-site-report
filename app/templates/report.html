@@ -99,11 +99,9 @@
   }
   .topology-page { page-break-before: always; }
   .topology-page h2 { color: #001E62; font-size: 17pt; border-bottom: 2pt solid #00BFB2; padding-bottom: 0.15cm; margin-bottom: 0.2cm; }
-  .topology-page .sub { color: #605E5C; font-size: 9pt; margin-bottom: 0.6cm; }
-  .topology-page .legend { margin-top: 0.4cm; font-size: 8pt; color: #605E5C; }
-  .topology-page .legend .item { display: block; margin-bottom: 0.2cm; white-space: nowrap; }
-  .topology-page .swatch { display: inline-block; width: 9pt; height: 9pt; border-radius: 2pt; margin-right: 0.15cm; vertical-align: middle; }
+  .topology-page .sub { color: #605E5C; font-size: 9pt; margin-bottom: 0.3cm; }
   .topology-page svg { display: block; margin: 0 auto; max-width: 100%; }
+  .topology-page svg + svg { margin-top: 0.15cm; }
 </style>
 </head>
 <body>
@@ -133,14 +131,13 @@
   <h2>Site topology</h2>
   <div class="sub">Switch-to-switch links discovered via LLDP. Non-switch neighbors (access points, phones, etc.) are omitted.</div>
   {{ topology_svg | safe }}
-  <!-- Ordered left-to-right to match the diagram's own layout: access/
-       other switches sit on the left of the diagram, core switches on
-       the right - see topology.py's module docstring. -->
-  <div class="legend">
-    <span class="item"><span class="swatch" style="background:#EEF0F5;border:0.5pt solid #B1B3B3;"></span>other switches</span>
-    <span class="item"><span class="swatch" style="background:#001E62;"></span>core switch(es)</span>
-    <span class="item"><span class="swatch" style="background:linear-gradient(90deg,#00BFB2,#7B2FF7,#E8590C);width:14pt;height:3pt;border-radius:0;vertical-align:middle;"></span>LAG (each one its own colour) - interface IDs shown at each end</span>
-  </div>
+  <!-- The legend is generated inside topology.py's build_switch_topology()
+       as a second <svg>, appended directly after the diagram's own - not a
+       separate HTML block - so its swatch+label items can use the exact
+       same rotate(90) text technique as every label in the diagram above
+       it. CSS `writing-mode: vertical-rl` was tried first but WeasyPrint
+       collapsed the rotated label boxes instead of reserving their
+       (now vertical) footprint, overlapping every item. -->
 </div>
 {% endif %}
 

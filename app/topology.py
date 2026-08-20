@@ -95,16 +95,18 @@ WHITE = "#FFFFFF"
 BOX_W = 92
 MIN_BOX_H = 130
 MAX_BOX_H = 480
-NODE_GAP_Y = 22
+NODE_GAP_Y = 16
 COMPONENT_GAP_X = 50
 LEFT_X = 20
 TOP_Y = 20
 
 # Page content-box budget (A4 portrait, matches the rest of the report's
 # unit-per-px scale). The diagram is sized to fill this, not just to fit
-# whatever its content naturally needs.
+# whatever its content naturally needs. Sized to leave room, on the same
+# page, for the heading/subtitle above and the legend below (both fixed-
+# size, unlike the diagram itself) - see _legend_svg's own size budget.
 TARGET_W = 660.0
-TARGET_H = 740.0  # leaves room on the same page for the heading, subtitle, and legend
+TARGET_H = 668.0
 
 
 def _norm_mac(mac: str | None) -> str:
@@ -389,7 +391,7 @@ def _switch_box(
     parts = [
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
         f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
-        _band_text(0, name, 11, "700", text_fill, 6.8),
+        _band_text(0, name, 10, "700", text_fill, 6.3),
         _band_text(1, model, 8.5, "400", sub_fill, 5.2),
     ]
     if stp_text:
@@ -467,6 +469,75 @@ def _push_clear_of_box(
     opt1 = (base[0] + dx, base[1] + dy)
     opt2 = (base[0] - dx, base[1] - dy)
     return opt1 if dist_to_box(*opt1) >= dist_to_box(*opt2) else opt2
+
+
+def _legend_svg(width: float) -> str:
+    """A standalone small SVG, meant to sit directly under the main diagram
+    in normal HTML block flow, using the exact same rotate(90 cx cy) text
+    technique as every label in the diagram above it - CSS `writing-mode:
+    vertical-rl` was tried first (simpler, no Python needed) but WeasyPrint
+    collapsed the rotated label boxes to near-zero width instead of
+    reserving their (now vertical) footprint, overlapping every item.
+    Rendering the legend as SVG sidesteps that CSS support gap entirely by
+    reusing a technique already proven to work in this exact renderer."""
+    items = [
+        (GRAY_FILL, GRAY_BORDER, "other switches"),
+        (NAVY, None, "core switch(es)"),
+        (None, None, "LAG"),
+    ]
+    char_px = 5.6
+    label_extents = [8 + len(text) * char_px for *_, text in items]
+    row_h = max(label_extents) + 10
+    caption = (
+        "Each LAG is drawn in its own colour, with an interface number labeled "
+        "beside each physical line at both ends."
+    )
+    caption_h = 16
+    height = row_h + caption_h
+
+    swatch_w = 9.0
+    label_thickness = 11.0
+    item_gap = 26.0
+    item_widths = [swatch_w + 4 + label_thickness for _ in items]
+    row_w = sum(item_widths) + item_gap * (len(items) - 1)
+    x = (width - row_w) / 2
+    cy = row_h / 2
+
+    parts = [
+        f'<svg width="{width:.0f}" height="{height:.0f}" viewBox="0 0 {width:.0f} {height:.0f}" '
+        'xmlns="http://www.w3.org/2000/svg" role="img">',
+        "<title>Legend</title>",
+    ]
+    for i, (fill, border, text) in enumerate(items):
+        sx = x
+        sy = cy - swatch_w / 2
+        if text == "LAG":
+            chip_colors = LAG_PALETTE[:3]
+            chip_w = swatch_w / len(chip_colors)
+            for j, c in enumerate(chip_colors):
+                parts.append(
+                    f'<rect x="{sx + j * chip_w:.1f}" y="{sy:.1f}" width="{chip_w:.1f}" height="{swatch_w:.1f}" fill="{c}"/>'
+                )
+        else:
+            border_attr = f' stroke="{border}" stroke-width="1"' if border else ""
+            parts.append(
+                f'<rect x="{sx:.1f}" y="{sy:.1f}" width="{swatch_w:.1f}" height="{swatch_w:.1f}" rx="2" fill="{fill}"{border_attr}/>'
+            )
+        lx = sx + swatch_w + 4 + label_thickness / 2
+        parts.append(
+            f'<text x="{lx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {lx:.1f} {cy:.1f})" '
+            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="7.5" font-weight="600" '
+            f'fill="{GRAY_TEXT}">{escape(text)}</text>'
+        )
+        x += item_widths[i] + item_gap
+
+    parts.append(
+        f'<text x="{width / 2:.1f}" y="{row_h + 10:.1f}" text-anchor="middle" '
+        f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="7" font-style="italic" '
+        f'fill="#888B8D">{escape(caption)}</text>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts)
 
 
 def build_switch_topology(switches: list[dict]) -> str | None:
@@ -807,4 +878,4 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         )
 
     svg_parts.append("</svg>")
-    return "\n".join(svg_parts)
+    return "\n".join(svg_parts) + "\n" + _legend_svg(canvas_w)
