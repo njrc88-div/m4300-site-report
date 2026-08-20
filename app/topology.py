@@ -44,10 +44,13 @@ whatever size its content naturally needs.
 Each LAG gets its own color from a fixed palette (cycled in a stable
 order) so it can be traced by eye through a diagram where several LAGs
 cross paths - a single shared color for every LAG made that impossible.
-Interface IDs are labeled once near each end (the real member ports from
-LAG config, not just a count) rather than one combined label stranded at
-the line's midpoint, often nowhere near either switch once several lines
-cross. Where a line attaches to a box is spread evenly along that box's
+A LAG is drawn as N genuinely parallel straight lines, one per physical
+member (real member ports from LAG config, not just a count), each with
+its own interface-number label sitting right beside it - rather than a
+single bowed pair with one combined "1,4" label stranded at the line's
+midpoint, which can't tell you which number belongs to which physical
+cable once it's nowhere near either switch. Where a line attaches to a box
+is spread evenly along that box's
 edge - ordered by the other end's vertical position - instead of every
 line pinching to the exact same center point regardless of how many
 lines share that box; same rule for every switch, so the fan-out pattern
@@ -544,7 +547,14 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         return x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
 
     for key, edge in edges.items():
-        a, b = tuple(key)
+        # Must match _build_edges' `sorted(key)` convention exactly - this
+        # is what determines which switch's real port list ends up in
+        # edge["a_ports"] vs ["b_ports"]. tuple(a_frozenset) does NOT
+        # reliably preserve sorted order (hash-based iteration), so using
+        # it here silently swapped which end got which label whenever the
+        # hash order disagreed with sorted order - the real cause of a LAG
+        # occasionally showing blank/wrong-side interface numbers.
+        a, b = sorted(key)
         if a not in positions or b not in positions:
             continue
         ax, ay, aw, ah = positions[a]
@@ -568,46 +578,47 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         count = _link_count(edge)
         is_lag = count > 1
         color = lag_color.get(key, LINE_COLOR)
-        if is_lag:
-            a_label = ",".join(sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key))
-            b_label = ",".join(sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key))
-        else:
-            a_label = (edge["a_ports"] or ["?"])[0]
-            b_label = (edge["b_ports"] or ["?"])[0]
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
 
-        if is_lag:
-            # Two links bowing apart into a lens/loop shape - the standard
-            # way network diagrams depict an aggregated/redundant link,
-            # rather than a single line that reads as one physical cable.
-            dx, dy = x2 - x1, y2 - y1
-            length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
-            px, py = -dy / length, dx / length
-            bow = 10
-            c1x, c1y = mx + px * bow, my + py * bow
-            c2x, c2y = mx - px * bow, my - py * bow
-            svg_parts.append(
-                f'<path d="M {x1:.1f} {y1:.1f} Q {c1x:.1f} {c1y:.1f} {x2:.1f} {y2:.1f}" '
-                f'fill="none" stroke="{color}" stroke-width="2"/>'
-            )
-            svg_parts.append(
-                f'<path d="M {x1:.1f} {y1:.1f} Q {c2x:.1f} {c2y:.1f} {x2:.1f} {y2:.1f}" '
-                f'fill="none" stroke="{color}" stroke-width="2"/>'
-            )
-        else:
+        if not is_lag:
             svg_parts.append(
                 f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
                 f'stroke="{color}" stroke-width="1.5"/>'
             )
+            a_txt = (edge["a_ports"] or ["?"])[0]
+            b_txt = (edge["b_ports"] or ["?"])[0]
+            ax_pt = _label_point(x1, y1, x2, y2, 0.14)
+            bx_pt = _label_point(x1, y1, x2, y2, 0.86)
+            pending_labels.append((ax_pt[0], ax_pt[1], 22 + len(a_txt) * 4.3, a_txt, color, False))
+            pending_labels.append((bx_pt[0], bx_pt[1], 22 + len(b_txt) * 4.3, b_txt, color, False))
+            continue
 
-        # Interface IDs sit close to the switch they belong to (one label
-        # near each end) rather than one combined label stranded in the
-        # middle of the diagram, often nowhere near either box once lines
-        # cross - each end's label is exactly the ports on that end.
-        ax_pt = _label_point(x1, y1, x2, y2, 0.14)
-        bx_pt = _label_point(x1, y1, x2, y2, 0.86)
-        pending_labels.append((ax_pt[0], ax_pt[1], 22 + len(a_label) * 4.3, a_label, color, is_lag))
-        pending_labels.append((bx_pt[0], bx_pt[1], 22 + len(b_label) * 4.3, b_label, color, is_lag))
+        # A LAG is drawn as N genuinely parallel straight lines (one per
+        # physical member, evenly offset perpendicular to the link) rather
+        # than a single bowed pair - matches how members are actually
+        # labeled: each line gets its own interface number, positioned
+        # right beside it, instead of one combined "1,4" label that can't
+        # tell you which number belongs to which physical cable.
+        a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
+        b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
+        n = max(len(a_members), len(b_members), 1)
+        dx, dy = x2 - x1, y2 - y1
+        length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+        px, py = -dy / length, dx / length
+        spacing = 5.0
+        for i in range(n):
+            off = (i - (n - 1) / 2) * spacing
+            lx1, ly1 = x1 + px * off, y1 + py * off
+            lx2, ly2 = x2 + px * off, y2 + py * off
+            svg_parts.append(
+                f'<line x1="{lx1:.1f}" y1="{ly1:.1f}" x2="{lx2:.1f}" y2="{ly2:.1f}" '
+                f'stroke="{color}" stroke-width="1.6"/>'
+            )
+            a_txt = a_members[i] if i < len(a_members) else "?"
+            b_txt = b_members[i] if i < len(b_members) else "?"
+            ax_pt = _label_point(lx1, ly1, lx2, ly2, 0.14)
+            bx_pt = _label_point(lx1, ly1, lx2, ly2, 0.86)
+            pending_labels.append((ax_pt[0], ax_pt[1], 16 + len(a_txt) * 4.3, a_txt, color, True))
+            pending_labels.append((bx_pt[0], bx_pt[1], 16 + len(b_txt) * 4.3, b_txt, color, True))
 
     for x, y, label_w, label, color, bold in _resolve_label_collisions(pending_labels):
         svg_parts.append(

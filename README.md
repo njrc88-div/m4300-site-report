@@ -108,28 +108,29 @@ treated as a collapsed/dual-core pair *if* the LAG'd partner also looks
 like a hub (connects to more than just this one switch) — this matters
 because once every uplink is commonly a LAG, not just the core-core link,
 a leaf's LAG to its core is otherwise structurally identical to the real
-core-core LAG. Both become roots, drawn side by side and connected by a
-bold loop rather than a single line. Otherwise the single switch with the
-most inter-switch links becomes the root. Each connected group of
-switches lays out as its own tree; any switch with no detected link to
-another switch in the report still gets shown, in an "unlinked" column,
-rather than silently disappearing.
+core-core LAG. Both become roots, drawn side by side. Otherwise the single
+switch with the most inter-switch links becomes the root. Each connected
+group of switches lays out as its own tree; any switch with no detected
+link to another switch in the report still gets shown, in an "unlinked"
+column, rather than silently disappearing.
 
-Each LAG is drawn in its own color (cycled from a fixed palette) so it
-can be traced by eye through a diagram where several LAGs cross paths.
-Interface IDs are labeled once near each end — the real member ports
-from LAG config when available (accurate even when LLDP only reports one
-summarized entry for the whole port-channel, not one per member), a
-single port number for a plain link — rather than one combined label
-stranded at the line's midpoint, often nowhere near either switch once
-several lines cross. Labels that would otherwise collide - which happens
-when several lines land near the same point - get nudged apart
-automatically, and where a line attaches to a box is spread evenly along
-that box's edge (ordered by the other end's position) instead of every
-line pinching to one point, so multiple connections fan out the same way
-on every switch. Root switches also show their STP root bridge priority,
-when the switch reports one, so you can see at a glance which core
-actually won root election.
+A LAG is drawn as N genuinely parallel straight lines, one per physical
+member (real member ports from LAG config when available, accurate even
+when LLDP only reports one summarized entry for the whole port-channel,
+not one per member) - each in the LAG's own color (cycled from a fixed
+10-color palette, so a given LAG can be traced by eye through a diagram
+where several cross paths) and each with its own interface-number label
+sitting right beside it, rather than one combined "1,4" label stranded at
+the line's midpoint that can't tell you which number belongs to which
+physical cable once several lines cross. A plain (non-LAG) link is one
+gray line with a single port label at each end. Labels that would
+otherwise collide - which happens when several lines land near the same
+point - get nudged apart automatically, and where a line attaches to a
+box is spread evenly along that box's edge (ordered by the other end's
+position) instead of every line pinching to one point, so multiple
+connections fan out the same way on every switch. Root switches also show
+their STP root bridge priority, when the switch reports one, so you can
+see at a glance which core actually won root election.
 
 ## Data pulled from the switch
 
