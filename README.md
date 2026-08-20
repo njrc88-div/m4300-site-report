@@ -43,14 +43,16 @@ right after the cover page: a hierarchical diagram of switch-to-switch
 links built from LLDP data (`app/topology.py`), regardless of whether the
 LLDP Neighbors module was checked for the report body. Non-switch LLDP
 neighbors (APs, phones, etc.) are filtered out — only links between two
-switches that are both in the report are drawn. Internally the tree is
-built right-to-left (root/core switch(es) pinned to the right edge, each
-hop toward the access layer further left, switches within a hop stacked
-vertically), then the whole rendered graphic is rotated 90 degrees
-counter-clockwise for the page: the right edge (cores) lands at the top,
-the left edge (access layer) lands at the bottom. Rotating the graphic
-rotates its text too — switch labels read sideways, using the page's
-full height for depth instead of its narrower width.
+switches that are both in the report are drawn. The diagram reads right
+to left: root/core switch(es) are pinned to the right edge, each hop
+toward the access layer sits further left. Boxes are narrow and tall
+rather than wide and short, with both text lines individually rotated
+-90 degrees to read bottom-to-top — that's what lets the diagram use the
+*page's* full height: box height is sized dynamically against a page-
+height budget (shrinking as more switches share a tier, growing when
+there are few), and the whole thing is rendered at that exact pixel
+size — not auto-scaled — so it fills the page instead of sitting at
+whatever size its content naturally needs.
 
 Root selection: a switch pair with more than one physical LLDP link
 between them (a LAG - LLDP is per-port, so an aggregated link shows up as

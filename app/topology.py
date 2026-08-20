@@ -17,12 +17,19 @@ Any switch with no detected link to another switch in the report is still
 shown, in an "unlinked" column, so nothing goes missing silently.
 
 The diagram reads right to left: root/core switch(es) are pinned to the
-right edge, each hop toward the access layer sits further left, and
-switches within a hop are stacked vertically. Internally the tree is
-built left-to-right (the natural direction for BFS-from-root) and then
-mirrored horizontally as a final step - simplest way to keep the
+right edge, each hop toward the access layer sits further left. Internally
+the tree is built left-to-right (the natural direction for BFS-from-root)
+and then mirrored horizontally as a final step - simplest way to keep the
 hierarchy/layout math untouched while flipping which edge the root lands
-on. Text stays upright throughout (no rotation applied to the graphic).
+on.
+
+Boxes are narrow and tall rather than wide and short, with their labels
+rotated to read bottom-to-top - this is what lets the diagram use the
+*page's* full height: box height is sized dynamically against a page-
+height budget (shrinking as more switches share a tier, growing when
+there are few), and the diagram is rendered at that exact pixel size
+rather than auto-scaled, so it fills the page instead of sitting at
+whatever size its content naturally needs.
 """
 from __future__ import annotations
 
@@ -38,13 +45,19 @@ GRAY_TEXT = "#605E5C"
 LINE_COLOR = "#9A9C9F"
 WHITE = "#FFFFFF"
 
-BOX_W = 175
-BOX_H = 46
-TIER_GAP_X = 110   # horizontal space between one tier's boxes and the next
-NODE_GAP_Y = 18    # vertical space between stacked boxes within a tier
-COMPONENT_GAP_Y = 40
+BOX_W = 92
+MIN_BOX_H = 130
+MAX_BOX_H = 480
+NODE_GAP_Y = 22
+COMPONENT_GAP_X = 50
 LEFT_X = 20
 TOP_Y = 20
+
+# Page content-box budget (A4 portrait, matches the rest of the report's
+# unit-per-px scale). The diagram is sized to fill this, not just to fit
+# whatever its content naturally needs.
+TARGET_W = 660.0
+TARGET_H = 740.0  # leaves room on the same page for the heading, subtitle, and legend
 
 
 def _norm_mac(mac: str | None) -> str:
@@ -188,19 +201,25 @@ def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
 
-def _switch_box(x: float, y: float, w: float, name: str, model: str, is_root: bool) -> str:
+def _switch_box(x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool) -> str:
+    """A narrow, tall box with both text lines rotated -90 degrees so they
+    read bottom-to-top - lets the box (and so the whole diagram) use the
+    page's height instead of its width."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    name_chars = max(6, int((w - 16) / 6.5))
+    name_chars = max(6, int((h - 16) / 6.5))
+    title_x = x + w * 0.36
+    sub_x = x + w * 0.74
+    cy = y + h / 2
     return f"""
-      <rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{BOX_H}" rx="5"
+      <rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5"
             fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>
-      <text x="{x + w / 2:.1f}" y="{y + 20:.1f}" text-anchor="middle"
-            font-family="'Liberation Sans', Arial, sans-serif" font-size="10.5" font-weight="700"
+      <text x="{title_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(-90 {title_x:.1f} {cy:.1f})"
+            font-family="'Liberation Sans', Arial, sans-serif" font-size="11" font-weight="700"
             fill="{text_fill}">{escape(_truncate(name, name_chars))}</text>
-      <text x="{x + w / 2:.1f}" y="{y + 35:.1f}" text-anchor="middle"
+      <text x="{sub_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(-90 {sub_x:.1f} {cy:.1f})"
             font-family="'Liberation Sans', Arial, sans-serif" font-size="8.5"
             fill="{sub_fill}">{escape(_truncate(model, name_chars + 4))}</text>
     """
@@ -250,75 +269,88 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     if not components:
         return None
 
-    positions: dict[str, tuple[float, float, float]] = {}  # name -> (x, y, w)
-    band_top = TOP_Y
-    max_x_reached = 0.0
-    root_names: set[str] = set()
-
+    # First pass: figure out every component's tiers/roots up front, so box
+    # height can be sized once from the single most-crowded tier anywhere
+    # in the diagram - keeps every box the same size instead of each
+    # component/tier picking its own.
+    component_layouts = []
+    max_breadth = 1
+    max_tier_count = 1
     for component in components:
         roots = _find_roots(component, edges)
-        root_names.update(roots)
         tiers, parent_of = _layout_tiers(component, edges, roots)
-        # A LAG-linked root pair needs a wider gap between them - otherwise
-        # the boxes sit edge to edge and the "LAG x N" label has nowhere to
-        # render (it ends up hidden behind the boxes drawn on top of it).
+        component_layouts.append((component, roots, tiers, parent_of))
+        max_breadth = max(max_breadth, max((len(t) for t in tiers), default=1))
+        max_tier_count = max(max_tier_count, len(tiers))
+    if unlinked:
+        max_breadth = max(max_breadth, len(unlinked))
+
+    box_h = max(MIN_BOX_H, min(MAX_BOX_H, (TARGET_H - (max_breadth - 1) * NODE_GAP_Y) / max_breadth))
+    tier_gap_x = max(60.0, (TARGET_W - LEFT_X - max_tier_count * BOX_W - 30) / max(1, max_tier_count - 1)) \
+        if max_tier_count > 1 else 0.0
+
+    positions: dict[str, tuple[float, float, float, float]] = {}  # name -> (x, y, w, h)
+    band_left = LEFT_X
+    max_x_reached = 0.0
+    max_y_reached = 0.0
+    root_names: set[str] = set()
+
+    for component, roots, tiers, parent_of in component_layouts:
+        root_names.update(roots)
         root_pair_key = frozenset(roots) if len(roots) == 2 else None
         root_pair_is_lag = bool(root_pair_key and _link_count(edges.get(root_pair_key, {"a_ports": [], "b_ports": []})) > 1)
 
         def gap_for(tier_index: int) -> float:
-            return 70 if (tier_index == 0 and root_pair_is_lag) else NODE_GAP_Y
+            return max(90.0, box_h * 0.2) if (tier_index == 0 and root_pair_is_lag) else NODE_GAP_Y
 
-        # First pass: each tier's column height, so shorter tiers can be
-        # centered against the tallest one in this component.
-        tier_heights = [
-            len(t) * BOX_H + max(0, len(t) - 1) * gap_for(i) for i, t in enumerate(tiers)
+        tier_widths = [
+            len(t) * box_h + max(0, len(t) - 1) * gap_for(i) for i, t in enumerate(tiers)
         ]
-        band_height = max(tier_heights) if tier_heights else BOX_H
+        band_height = max(tier_widths) if tier_widths else box_h
 
         prev_tier_y: dict[str, float] = {}
-        x = LEFT_X
+        x = band_left
         for tier_index, tier_nodes in enumerate(tiers):
             if prev_tier_y:
-                # Group children under their parent's vertical position so
-                # each co-root's subtree visually clusters on its own side.
                 tier_nodes = sorted(
                     tier_nodes,
                     key=lambda n: (prev_tier_y.get(parent_of.get(n), 0), n),
                 )
             gap = gap_for(tier_index)
-            this_h = tier_heights[tier_index]
-            start_y = band_top + (band_height - this_h) / 2
+            this_w = tier_widths[tier_index]
+            start_y = TOP_Y + (band_height - this_w) / 2
             this_tier_y: dict[str, float] = {}
             for i, name in enumerate(tier_nodes):
-                y = start_y + i * (BOX_H + gap)
-                positions[name] = (x, y, BOX_W)
-                this_tier_y[name] = y + BOX_H / 2
+                y = start_y + i * (box_h + gap)
+                positions[name] = (x, y, BOX_W, box_h)
+                this_tier_y[name] = y + box_h / 2
             prev_tier_y = this_tier_y
+            max_y_reached = max(max_y_reached, TOP_Y + band_height)
             max_x_reached = max(max_x_reached, x + BOX_W)
-            x += BOX_W + TIER_GAP_X
-        band_top += band_height + COMPONENT_GAP_Y
+            x += BOX_W + tier_gap_x
+        band_left = x + COMPONENT_GAP_X
 
     unlinked_label_y = None
     if unlinked:
-        unlinked_label_y = band_top
-        y = band_top + 16
+        unlinked_label_y = TOP_Y
+        y = TOP_Y + 20
         for name in unlinked:
-            positions[name] = (LEFT_X, y, BOX_W)
-            max_x_reached = max(max_x_reached, LEFT_X + BOX_W)
-            y += BOX_H + NODE_GAP_Y
-        band_top = y
+            positions[name] = (band_left, y, BOX_W, box_h)
+            y += box_h + NODE_GAP_Y
+        max_y_reached = max(max_y_reached, y)
+        max_x_reached = max(max_x_reached, band_left + BOX_W)
 
     canvas_w = max_x_reached + 30
-    canvas_h = band_top + 10
+    canvas_h = max_y_reached + 10
 
     # Flip horizontally so the root(s) land on the right edge and the
     # access layer on the left, instead of rebuilding the tier/BFS math
     # mirrored - a straight x -> canvas_w - x - box_width remap of every
     # already-computed position achieves the same result.
-    positions = {name: (canvas_w - x - w, y, w) for name, (x, y, w) in positions.items()}
+    positions = {name: (canvas_w - x - w, y, w, h) for name, (x, y, w, h) in positions.items()}
 
     svg_parts = [
-        f'<svg width="100%" height="100%" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
+        f'<svg width="{canvas_w:.0f}" height="{canvas_h:.0f}" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         'xmlns="http://www.w3.org/2000/svg" role="img">',
         "<title>Switch topology</title>",
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
@@ -334,17 +366,17 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         a, b = tuple(key)
         if a not in positions or b not in positions:
             continue
-        ax, ay, aw = positions[a]
-        bx, by, bw = positions[b]
-        x1, y1 = ax + aw, ay + BOX_H / 2
-        x2, y2 = bx, by + BOX_H / 2
+        ax, ay, aw, ah = positions[a]
+        bx, by, bw, bh = positions[b]
+        x1, y1 = ax + aw, ay + ah / 2
+        x2, y2 = bx, by + bh / 2
         if abs(x1 - x2) < 1:  # same column (co-root pair stacked vertically)
             if ay <= by:
-                x1, y1 = ax + aw / 2, ay + BOX_H
+                x1, y1 = ax + aw / 2, ay + ah
                 x2, y2 = bx + bw / 2, by
             else:
                 x1, y1 = ax + aw / 2, ay
-                x2, y2 = bx + bw / 2, by + BOX_H
+                x2, y2 = bx + bw / 2, by + bh
 
         count = _link_count(edge)
         is_lag = count > 1
@@ -389,13 +421,14 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             f'fill="{TEAL if is_lag else GRAY_TEXT}">{escape(label)}</text>'
         )
 
-    for name, (x, y, w) in positions.items():
+    for name, (x, y, w, h) in positions.items():
         sw = by_name[name]
-        svg_parts.append(_switch_box(x, y, w, name, sw.get("model") or "", name in root_names))
+        svg_parts.append(_switch_box(x, y, w, h, name, sw.get("model") or "", name in root_names))
 
     if unlinked_label_y is not None:
+        ux, uy, uw, uh = positions[unlinked[0]]
         svg_parts.append(
-            f'<text x="{LEFT_X}" y="{unlinked_label_y + 10:.1f}" '
+            f'<text x="{ux:.1f}" y="{uy - 8:.1f}" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="8.5" '
             f'font-style="italic" fill="{GRAY_TEXT}">'
             "No inter-switch link detected for these:</text>"

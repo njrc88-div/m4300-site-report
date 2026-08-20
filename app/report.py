@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -16,30 +15,6 @@ _env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
     autoescape=select_autoescape(["html"]),
 )
-
-# Post-rotation budget on a portrait A4 page (content area, in CSS px/SVG
-# user units - this codebase treats the two as 1:1 throughout). The
-# topology diagram is drawn right-to-left internally (root/cores on the
-# right, access layer to the left) then rotated 90 degrees counter-
-# clockwise for the page: the right edge (cores) lands at the top, the
-# left edge (access layer) lands at the bottom.
-_TOPOLOGY_MAX_POST_ROTATION_WIDTH = 660.0
-_TOPOLOGY_MAX_POST_ROTATION_HEIGHT = 900.0
-_VIEWBOX_RE = re.compile(r'viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"')
-
-
-def _topology_css(svg: str) -> dict | None:
-    match = _VIEWBOX_RE.search(svg)
-    if not match:
-        return None
-    natural_w, natural_h = float(match.group(1)), float(match.group(2))
-    scale = min(
-        _TOPOLOGY_MAX_POST_ROTATION_HEIGHT / natural_w,
-        _TOPOLOGY_MAX_POST_ROTATION_WIDTH / natural_h,
-        1.0,
-    )
-    pre_w, pre_h = natural_w * scale, natural_h * scale
-    return {"pre_w": pre_w, "pre_h": pre_h, "post_w": pre_h, "post_h": pre_w}
 
 
 def render_report_pdf(
@@ -64,6 +39,5 @@ def render_report_pdf(
         switches=switch_results,
         logo_path=LOGO_PATH,
         topology_svg=topology_svg,
-        topology_css=_topology_css(topology_svg) if topology_svg else None,
     )
     return HTML(string=html, base_url=str(APP_DIR)).write_pdf()
