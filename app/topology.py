@@ -392,8 +392,8 @@ def _switch_box(
 
 
 def _resolve_label_collisions(
-    labels: list[tuple[float, float, float, str, str, bool]],
-) -> list[tuple[float, float, float, str, str, bool]]:
+    labels: list[tuple[float, float, float, str, str, bool, float]],
+) -> list[tuple[float, float, float, str, str, bool, float]]:
     """Nudge label X positions apart when their (rotated, vertical-reading)
     text would overlap.
 
@@ -406,10 +406,17 @@ def _resolve_label_collisions(
     old horizontal-label version. With one label per physical LAG member
     landing right where several lines fan out near a switch, collisions
     here are routine, not an edge case.
+
+    Each label carries a `sign` (+1/-1) fixing which horizontal direction
+    is actually safe for it - away from whichever switch box it's
+    labeling. Nudging unconditionally in +x (as an earlier version did)
+    could push a label that started safely clear of its box right back
+    into it once a second label needed to slot in beside it; nudging along
+    the label's own safe direction can't reintroduce that.
     """
     label_w = 13
-    placed: list[tuple[float, float, float, str, str, bool]] = []
-    for mx, my, extent, label, color, bold in sorted(labels, key=lambda t: (t[1], t[0])):
+    placed: list[tuple[float, float, float, str, str, bool, float]] = []
+    for mx, my, extent, label, color, bold, sign in sorted(labels, key=lambda t: (t[1], t[0])):
         x = mx
         for _ in range(20):
             collision = next(
@@ -422,9 +429,38 @@ def _resolve_label_collisions(
             )
             if not collision:
                 break
-            x = collision[0] + label_w + 2
-        placed.append((x, my, extent, label, color, bold))
+            x = x + sign * (label_w + 2)
+        placed.append((x, my, extent, label, color, bold, sign))
     return placed
+
+
+def _push_clear_of_box(
+    base: tuple[float, float], dx: float, dy: float, bx: float, by: float, bw: float, bh: float
+) -> tuple[float, float]:
+    """Apply push (dx, dy) to `base`, or its exact opposite - whichever
+    ends up farther from the given box.
+
+    The push direction is perpendicular to a LAG's own line, which is
+    correct for spreading two member labels apart from each other - but
+    that perpendicular flips orientation relative to "away from the box"
+    depending on whether the line's other end sits above or below this
+    box's anchor point (a fanned-out set of connections includes lines
+    sloping both ways), so a fixed sign convention on which member pushes
+    which way isn't reliably "outward". Picking whichever candidate is
+    farther from the box (by actual distance to its boundary, zero if
+    inside it) sidesteps having to reason about which fixed margin is
+    "safe" - the anchor point always starts close to the box, so a small
+    margin can flag both candidates as unsafe and a large one can flag
+    neither; comparing them against each other has no such tuning problem.
+    """
+    def dist_to_box(px: float, py: float) -> float:
+        cx = max(bx, min(px, bx + bw))
+        cy = max(by, min(py, by + bh))
+        return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+
+    opt1 = (base[0] + dx, base[1] + dy)
+    opt2 = (base[0] - dx, base[1] - dy)
+    return opt1 if dist_to_box(*opt1) >= dist_to_box(*opt2) else opt2
 
 
 def build_switch_topology(switches: list[dict]) -> str | None:
@@ -572,7 +608,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     # ends afterwards). Labels are collected and placed in a second pass,
     # after lines, so overlapping labels - which happen when several lines
     # attach near the same point - can be nudged apart from each other.
-    pending_labels: list[tuple[float, float, float, str, str, bool]] = []  # (x, y, w, label, color, bold)
+    pending_labels: list[tuple[float, float, float, str, str, bool, float]] = []  # (x, y, w, label, color, bold, sign)
 
     def _label_point(x1, y1, x2, y2, dist):
         """Point `dist` pixels from (x1,y1) toward (x2,y2) - a FIXED pixel
@@ -643,8 +679,10 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             b_txt = (edge["b_ports"] or ["?"])[0]
             ax_pt = _label_point(x1, y1, x2, y2, 16)
             bx_pt = _label_point(x2, y2, x1, y1, 16)
-            pending_labels.append((ax_pt[0], ax_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, False))
-            pending_labels.append((bx_pt[0], bx_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, False))
+            a_sign = -1.0 if ax_pt[0] < ax + aw / 2 else 1.0
+            b_sign = -1.0 if bx_pt[0] < bx + bw / 2 else 1.0
+            pending_labels.append((ax_pt[0], ax_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, False, a_sign))
+            pending_labels.append((bx_pt[0], bx_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, False, b_sign))
             continue
 
         # A LAG is drawn as N genuinely parallel straight lines (one per
@@ -661,7 +699,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         dx, dy = x2 - x1, y2 - y1
         length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
         px, py = -dy / length, dx / length
-        spacing = 6.0
+        spacing = 8.0
         for i in range(n):
             off = (i - (n - 1) / 2) * spacing
             lx1, ly1 = x1 + px * off, y1 + py * off
@@ -679,16 +717,18 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             # against its sibling member's line and label 6 units away.
             a_base = _label_point(lx1, ly1, lx2, ly2, 16)
             b_base = _label_point(lx2, ly2, lx1, ly1, 16)
-            push = off * 1.8
-            a_pt = (a_base[0] + px * push, a_base[1] + py * push)
-            b_pt = (b_base[0] + px * push, b_base[1] + py * push)
-            pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True))
-            pending_labels.append((b_pt[0], b_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, True))
+            push = off * 4.0
+            a_pt = _push_clear_of_box(a_base, px * push, py * push, ax, ay, aw, ah)
+            b_pt = _push_clear_of_box(b_base, px * push, py * push, bx, by, bw, bh)
+            a_sign = -1.0 if a_pt[0] < ax + aw / 2 else 1.0
+            b_sign = -1.0 if b_pt[0] < bx + bw / 2 else 1.0
+            pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True, a_sign))
+            pending_labels.append((b_pt[0], b_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, True, b_sign))
 
     # Every label reads top-to-bottom (rotated 90 degrees), matching the
     # switch boxes' own text - one consistent orientation across the whole
     # diagram instead of horizontal numbers next to vertical box labels.
-    for x, y, extent, label, color, bold in _resolve_label_collisions(pending_labels):
+    for x, y, extent, label, color, bold, _sign in _resolve_label_collisions(pending_labels):
         rect_w, rect_h = 13, extent
         svg_parts.append(
             f'<rect x="{x - rect_w / 2:.1f}" y="{y - rect_h / 2:.1f}" width="{rect_w:.1f}" height="{rect_h:.1f}" fill="{WHITE}"/>'
