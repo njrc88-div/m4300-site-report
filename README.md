@@ -15,25 +15,34 @@ special-case one model over the other. There's no switch-model gate on
 which modules you can run; whatever a given switch actually supports,
 works.
 
-**Two API generations, one client.** A separate, newer "AVUI" API
-(Swagger 2.0, session-header auth) also exists and covers the same
-M4250/M4300/M4350/M4500 line with a richer surface — notably real MLAG
-status (vs. inferring a collapsed-core pair from LAG link counts) and an
-LLDP endpoint that returns the neighbor's hostname and management IP
-directly. `NetgearClient.login()` tries the AVUI session-token login
-first and falls back to the original ConfigAgent bearer-token login if
-that fails, so this works against switches that only speak one or the
-other without any configuration. AVUI's spec declares `scheme: https`
-with no port, which defaults to 443 (the switch's normal web-GUI port) —
-a different port than ConfigAgent's dedicated REST API, which normally
-sits on 8443 (this app's default per-switch port). So the AVUI login
-attempt is tried on the switch's configured port first, then retried
-once against 443 before falling back to ConfigAgent, meaning a switch
-you've entered with port 8443 in the inventory can still be found
-speaking AVUI on 443 without you having to add it twice. Test Connection
-reports which one a given switch used (`auth_mode`); AVUI-only modules
-(MLAG) raise a clear "not available on this switch" error instead of a
-confusing failure when a switch only speaks ConfigAgent.
+**Two API generations, one client, both logged in at once.** A separate,
+newer "AVUI" API (Swagger 2.0, session-header auth) also exists and
+covers the same M4250/M4300/M4350/M4500 line with a richer surface —
+notably real MLAG status (vs. inferring a collapsed-core pair from LAG
+link counts) and an LLDP endpoint that returns the neighbor's hostname
+and management IP directly. AVUI's spec declares `scheme: https` with no
+port, which defaults to 443 (the switch's normal web-GUI port) — a
+different port than ConfigAgent's dedicated REST API, which normally
+sits on 8443 (this app's default per-switch port), so the AVUI login is
+tried on the switch's configured port first and then retried once
+against 443 before being treated as unavailable.
+
+`NetgearClient.login()` attempts AVUI and ConfigAgent independently
+rather than picking one — real firmware has been observed exposing a
+genuinely different subset of paths on each. One real switch answered
+`/device_info`, `/sw_lag_cfg`, `/fiber_optics`, `/neighbor`, and every
+AVUI-only endpoint (MLAG/PTP/multicast) over its AVUI session, but 404'd
+on `/sw_portstats`, `/poe_config`, `/stp`, `/fdbs`, `/dual_image_status`,
+and `/system_rfc1213` over that same session — all of which worked fine
+over ConfigAgent's session on the same switch a moment later. So every
+request tries whichever session is available, and if it 404s while the
+*other* session is also logged in, retries the identical path there
+before giving up — cheaper and more robust than hardcoding which path
+lives on which API per model/firmware. Test Connection reports which
+session(s) a given switch accepted (`auth_mode`: `avui`, `configagent`,
+or `avui+configagent`); AVUI-only modules (MLAG, PTP, Multicast) raise a
+clear "not available on this switch" error only when no AVUI session
+exists at all.
 
 ## What it does
 

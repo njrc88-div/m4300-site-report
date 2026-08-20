@@ -52,6 +52,13 @@ def _avui_fan_status_text(fan_units: list) -> str:
     return ", ".join(parts) if parts else "-"
 
 
+def _is_real_ip(value) -> bool:
+    """0.0.0.0 shows up from AVUI's servicePortIP when the switch is
+    managed over a VLAN interface rather than the dedicated service port -
+    it's not a real address, so treat it the same as missing."""
+    return bool(value) and value != "0.0.0.0"
+
+
 def merge_avui_device_info(info: dict) -> dict:
     """AVUI's /device_info is shaped very differently from ConfigAgent's -
     stacking-aware (a `details` list, one entry per physical unit) rather
@@ -65,7 +72,8 @@ def merge_avui_device_info(info: dict) -> dict:
     primary = next((u for u in units if u.get("management")), units[0] if units else {})
 
     info.setdefault("macAddr", info.get("mac"))
-    info.setdefault("lanIpAddress", info.get("servicePortIP"))
+    if _is_real_ip(info.get("servicePortIP")):
+        info.setdefault("lanIpAddress", info.get("servicePortIP"))
     info.setdefault("model", primary.get("model"))
     info.setdefault("serialNumber", primary.get("sn"))
     info.setdefault("swVer", primary.get("fwVer"))
@@ -103,10 +111,11 @@ async def _device_info(client: NetgearClient) -> dict:
     info["fanState_text"] = (
         _avui_fan_status_text(info.get("fan")) if "fan" in info else _fan_status_text(info.get("fanState"))
     )
-    # Some firmware doesn't populate lanIpAddress at all (observed on a
-    # 14.0.6.19 M4350). The address we used to log in IS the management
-    # IP - it's a reliable fallback rather than leaving the report blank.
-    if not info.get("lanIpAddress"):
+    # Some firmware doesn't populate lanIpAddress at all, or reports
+    # 0.0.0.0 (observed on a 14.0.6.19 M4350 managed over a VLAN interface
+    # rather than the dedicated service port). The address we used to log
+    # in IS the management IP - it's a reliable fallback either way.
+    if not _is_real_ip(info.get("lanIpAddress")):
         info["lanIpAddress"] = client.host
     return info
 

@@ -121,10 +121,16 @@
     return `<span class="status-pill pending">Not tested</span>`;
   }
 
+  const AUTH_MODE_LABELS = {
+    "avui": "AVUI API",
+    "configagent": "ConfigAgent API",
+    "avui+configagent": "AVUI + ConfigAgent",
+  };
+
   function modelCell(sw) {
     if (!sw.model) return `<span class="empty-state" style="padding:0">Run Test &rarr;</span>`;
     const authBadge = sw.authMode
-      ? `<span class="status-pill ${sw.authMode === "avui" ? "ok" : "pending"}" style="font-size:0.65rem;padding:0.05rem 0.4rem;margin-top:0.15rem;display:inline-block;">${sw.authMode === "avui" ? "AVUI API" : "ConfigAgent API"}</span>`
+      ? `<span class="status-pill ${sw.authMode === "configagent" ? "pending" : "ok"}" style="font-size:0.65rem;padding:0.05rem 0.4rem;margin-top:0.15rem;display:inline-block;">${AUTH_MODE_LABELS[sw.authMode] || escapeHtml(sw.authMode)}</span>`
       : "";
     return `<div style="font-weight:600">${escapeHtml(sw.model)}</div><div style="color:var(--gray-muted);font-size:0.75rem">${escapeHtml(sw.firmware || "")}</div>${authBadge}`;
   }

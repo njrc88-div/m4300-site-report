@@ -10,10 +10,20 @@ Two REST API generations exist in the wild and this client speaks both:
   `POST /login {"user": {"name", "password"}}`, returns a session token,
   sent back as a `session` header.
 
-`login()` tries AVUI first and falls back to ConfigAgent - whichever
-succeeds sets `self.auth_mode`, and every subsequent request is signed
-accordingly. Methods that only exist on AVUI (e.g. MLAG status) raise a
-clear error if login ended up on ConfigAgent instead of silently failing.
+`login()` attempts BOTH, independently, rather than picking one - real
+firmware has been observed exposing genuinely different subsets of paths
+on each: e.g. one unit answered `/device_info`, `/sw_lag_cfg`,
+`/fiber_optics`, `/neighbor` and every AVUI-only endpoint (MLAG/PTP/
+multicast) over its AVUI session, but 404'd on `/sw_portstats`,
+`/poe_config`, `/stp`, `/fdbs`, `/dual_image_status`, `/system_rfc1213`
+over that same session - all of which work fine over ConfigAgent's
+session on the same switch. So `_request` tries whichever session logged
+in successfully, and if that one 404s while the *other* session is also
+authenticated, retries the identical path over that one before giving up
+- cheaper and more robust than trying to hardcode which path lives on
+which API per model/firmware. Methods that are genuinely AVUI-only (e.g.
+MLAG status) still raise a clear error up front if no AVUI session
+exists, rather than let a 404 round-trip happen for nothing.
 
 The published OpenAPI/Swagger specs are also not fully reliable on field
 naming - e.g. the ConfigAgent spec documents most response envelopes with
@@ -119,7 +129,7 @@ class NetgearClient:
         self._timeout = timeout
         self._token: str | None = None
         self._session_token: str | None = None
-        self.auth_mode: str | None = None  # "avui" | "configagent"
+        self.auth_mode: str | None = None  # "avui" | "configagent" | "avui+configagent"
         self._http = httpx.AsyncClient(
             base_url=f"https://{host}:{port}/api/v1",
             verify=verify_tls,
@@ -140,7 +150,7 @@ class NetgearClient:
 
     async def __aexit__(self, *exc) -> None:
         try:
-            if self.auth_mode:
+            if self._token or self._session_token:
                 await self.logout()
         finally:
             await self._http.aclose()
@@ -167,21 +177,53 @@ class NetgearClient:
         logger.debug("RAW %s %s -> %s", method, path, _redact(data))
         return data
 
+    def _auth_headers_for(self, mode: str) -> dict | None:
+        if mode == "avui" and self._session_token:
+            return {"session": self._session_token}
+        if mode == "configagent" and self._token:
+            return {"Authorization": f"Bearer {self._token}"}
+        return None
+
+    def _http_for(self, mode: str) -> httpx.AsyncClient:
+        if mode == "avui" and self._avui_http is not None:
+            return self._avui_http
+        return self._http
+
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        headers = kwargs.pop("headers", {})
-        if self.auth_mode == "avui" and self._session_token:
-            headers["session"] = self._session_token
-        elif self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-        http = self._avui_http if (self.auth_mode == "avui" and self._avui_http is not None) else self._http
-        return await self._send(http, method, path, headers=headers, **kwargs)
+        modes = [m for m in ("avui", "configagent") if self._auth_headers_for(m) is not None]
+        if not modes:
+            raise NetgearAPIError("Not logged in")
+        base_headers = kwargs.pop("headers", {}) or {}
+        last_exc: NetgearAPIError | None = None
+        for i, mode in enumerate(modes):
+            headers = {**base_headers, **self._auth_headers_for(mode)}
+            try:
+                return await self._send(self._http_for(mode), method, path, headers=headers, **kwargs)
+            except NetgearAPIError as exc:
+                last_exc = exc
+                # A 404 here means "this path doesn't exist on this
+                # particular API surface", not "this switch doesn't have
+                # this data" - worth trying the other logged-in session
+                # (if any) before giving up. Any other error (403, 500,
+                # non-JSON...) is a real answer from the right place.
+                if i < len(modes) - 1 and "HTTP 404" in str(exc):
+                    continue
+                raise
+        raise last_exc  # pragma: no cover - unreachable, satisfies type checkers
 
     async def login(self) -> None:
-        if await self._try_avui_login():
+        avui_ok = await self._try_avui_login()
+        configagent_ok = await self._try_configagent_login()
+        if avui_ok and configagent_ok:
+            self.auth_mode = "avui+configagent"
+        elif avui_ok:
             self.auth_mode = "avui"
-            return
-        await self._configagent_login()
-        self.auth_mode = "configagent"
+        elif configagent_ok:
+            self.auth_mode = "configagent"
+        else:
+            raise NetgearAPIError(
+                "Login failed: neither the AVUI nor the ConfigAgent API accepted these credentials."
+            )
 
     async def _try_avui_login(self) -> bool:
         """AVUI login - returns False (rather than raising) on anything that
@@ -221,28 +263,40 @@ class NetgearClient:
             return True
         return False
 
-    async def _configagent_login(self) -> None:
+    async def _try_configagent_login(self) -> bool:
+        """ConfigAgent login on the switch's configured port - returns False
+        (rather than raising) so it can be attempted independently of the
+        AVUI login above; both can succeed on the same switch."""
         body = {"login": {"username": self._username, "password": self._password}}
-        data = await self._request("POST", "/login", json=body)
+        try:
+            data = await self._send(self._http, "POST", "/login", json=body)
+        except NetgearAPIError:
+            return False
         if not _resp_ok(data):
-            raise NetgearAPIError((data.get("resp") or {}).get("respMsg", "Login failed"))
+            return False
         token = _unwrap(data, "login").get("token")
         if not token:
-            raise NetgearAPIError("Login response did not include a token")
+            return False
         self._token = token
+        return True
 
     async def logout(self) -> None:
-        try:
-            await self._request("POST", "/logout")
-        finally:
-            self._token = None
-            self._session_token = None
+        for mode in ("avui", "configagent"):
+            headers = self._auth_headers_for(mode)
+            if headers is None:
+                continue
+            try:
+                await self._send(self._http_for(mode), "POST", "/logout", headers=headers)
+            except NetgearAPIError:
+                pass
+        self._token = None
+        self._session_token = None
 
     def _require_avui(self, feature: str) -> None:
-        if self.auth_mode != "avui":
+        if not self._session_token:
             raise NetgearAPIError(
-                f"{feature} requires the newer AVUI API - this switch logged in via the older "
-                "ConfigAgent API instead, so this data isn't available."
+                f"{feature} requires the newer AVUI API - this switch didn't authenticate via "
+                "AVUI, so this data isn't available."
             )
 
     # -- device / system ---------------------------------------------------
@@ -366,7 +420,7 @@ class NetgearClient:
         which API actually served it, so modules.py and topology.py don't
         need to know which one ran - they just get better-populated fields
         (a real management IP, a real hostname) when AVUI is available."""
-        if self.auth_mode == "avui":
+        if self._session_token:
             try:
                 return await self._get_lldp_neighbors_avui()
             except NetgearAPIError:
