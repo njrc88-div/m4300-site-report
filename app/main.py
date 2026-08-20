@@ -15,7 +15,7 @@ from .models import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
-from .modules import MODULES, MODULES_BY_ID, merge_avui_device_info
+from .modules import MODULES, MODULES_BY_ID, merge_avui_device_info, stp_priority_from
 from .netgear_client import NetgearAPIError, NetgearClient
 from .report import render_report_pdf
 from .topology import build_switch_topology
@@ -108,7 +108,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
     for switch in req.switches:
         entry: dict = {
             "switch": switch, "error": None, "modules": {},
-            "_lldp_neighbors": [], "_lag_groups": [], "_mlag": None,
+            "_lldp_neighbors": [], "_lag_groups": [], "_mlag": None, "_stp_priority": None,
         }
         try:
             async with _client_for(switch) as client:
@@ -156,6 +156,15 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
                         entry["_mlag"] = await client.get_mlag_status()
                     except Exception:
                         pass
+
+                stp_result = entry["modules"].get("stp")
+                if stp_result is not None and not stp_result.get("error"):
+                    entry["_stp_priority"] = stp_priority_from(stp_result.get("global"))
+                else:
+                    try:
+                        entry["_stp_priority"] = stp_priority_from(dict(await client.get_stp()))
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.warning("Switch %s unreachable: %s", switch.host, exc)
             entry["error"] = str(exc)
@@ -165,9 +174,11 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
         {
             "name": r["switch"].name,
             "mac": (r.get("device_info") or {}).get("macAddr"),
+            "model": (r.get("device_info") or {}).get("model", ""),
             "neighbors": r.get("_lldp_neighbors") or [],
             "lag_groups": r.get("_lag_groups") or [],
             "mlag": r.get("_mlag"),
+            "stp_priority": r.get("_stp_priority"),
         }
         for r in switch_results
         if not r["error"]

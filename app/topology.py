@@ -106,7 +106,7 @@ TOP_Y = 20
 # page, for the heading/subtitle above and the legend below (both fixed-
 # size, unlike the diagram itself) - see _legend_svg's own size budget.
 TARGET_W = 660.0
-TARGET_H = 668.0
+TARGET_H = 685.0
 
 
 def _norm_mac(mac: str | None) -> str:
@@ -343,28 +343,73 @@ def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
 
-def _switch_box(x: float, y: float, w: float, h: float, name: str, is_root: bool) -> str:
-    """A narrow, tall box with just the hostname, rotated 90 degrees to
-    read top-to-bottom and centered in the box. Model and STP priority
-    were dropped after repeated attempts at fitting all three (side-by-
-    side columns, proportional bands, then a tightly-packed centered
-    block) still didn't read cleanly - the hostname is the one thing that
-    actually needs to be in the box at a glance; model is already shown in
-    that switch's own report section, and root election is visible from
-    which box is navy/teal without needing the number spelled out too."""
+def _switch_box(
+    x: float, y: float, w: float, h: float, name: str, is_root: bool,
+    model: str = "", stp_priority: int | None = None,
+) -> str:
+    """A narrow, tall box with the hostname as a bold heading and model /
+    (root switches only) STP priority as smaller sub-headings below it -
+    all rotated 90 degrees to read top-to-bottom, and the whole group
+    tightly packed and centered in the box.
+
+    The hostname's own space is reserved first, sized to its full text -
+    it must never truncate before its distinguishing suffix (e.g.
+    "Edge-NE-88-11" vs "-12") - and only what's left is split between the
+    sub-headings, which *can* tolerate truncation (model is shown in full
+    in that switch's own report section anyway; this is just a hint).
+    That's a deliberate change from treating all lines as equally
+    space-constrained - three failed rounds (side-by-side columns,
+    proportional bands sized off the box's full height, then a tightly
+    packed block still budgeted by the same proportional weights) all
+    made the hostname compete for space with its own sub-headings."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
+    sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    cx, cy = x + w / 2, y + h / 2
-    chars = max(4, int((h - 16) / 6.3))
-    text = _truncate(name, chars)
-    return (
+    cx = x + w / 2
+    stp_text = str(stp_priority) if stp_priority is not None else None
+
+    host_chars = max(4, int((h - 16) / 6.3))
+    host_str = _truncate(name, host_chars)
+    host_extent = max(14.0, len(host_str) * 6.3 + 8)
+
+    line_gap = 8.0
+    sub_count = (1 if model else 0) + (1 if stp_text else 0)
+    sub_budget = max(0.0, h - host_extent - line_gap * sub_count)
+    # STP priority is a bare number (0-65535, at most 5 digits) - it gets
+    # only the (small) reservation its own actual digit count needs, not a
+    # flat worst-case allowance, so model - which varies a lot in length
+    # and can't always fit anyway - gets everything else instead of both
+    # ending up a few characters short of actually meaning anything.
+    stp_reserve = min(sub_budget, len(stp_text) * 5.2 + 8) if stp_text else 0.0
+    model_budget = sub_budget - stp_reserve
+
+    lines = [(host_str, 11, "700", text_fill, host_extent)]
+    if model:
+        chars = max(4, int((model_budget - 8) / 5.2))
+        text = _truncate(model, chars)
+        lines.append((text, 7.5, "400", sub_fill, max(12.0, len(text) * 5.2 + 8)))
+    if stp_text:
+        chars = max(5, int((stp_reserve - 8) / 5.2))
+        text = _truncate(stp_text, chars)
+        lines.append((text, 7.5, "400", sub_fill, max(12.0, len(text) * 5.2 + 8)))
+
+    block_h = sum(l[4] for l in lines) + line_gap * (len(lines) - 1)
+    cursor = y + (h - block_h) / 2
+
+    parts = [
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
-        f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>'
-        f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
-        f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="11" font-weight="700" '
-        f'fill="{text_fill}">{escape(text)}</text>'
-    )
+        f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
+    ]
+    for text, font_size, weight, fill_color, extent in lines:
+        cy = cursor + extent / 2
+        parts.append(
+            f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
+            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="{font_size}" font-weight="{weight}" '
+            f'fill="{fill_color}">{escape(text)}</text>'
+        )
+        cursor += extent + line_gap
+    return "".join(parts)
 
 
 def _resolve_label_collisions(
@@ -509,8 +554,9 @@ def _legend_svg(width: float) -> str:
 
 
 def build_switch_topology(switches: list[dict]) -> str | None:
-    """switches: [{"name": str, "mac": str|None, "neighbors": [...],
-    "lag_groups": [...], "mlag": {...} | None}]"""
+    """switches: [{"name": str, "mac": str|None, "model": str,
+    "neighbors": [...], "lag_groups": [...], "mlag": {...} | None,
+    "stp_priority": int | None}]"""
     if len(switches) < 2:
         return None
 
@@ -828,8 +874,12 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         )
 
     for name, (x, y, w, h) in positions.items():
+        sw = by_name[name]
         is_root = name in root_names
-        svg_parts.append(_switch_box(x, y, w, h, name, is_root))
+        svg_parts.append(_switch_box(
+            x, y, w, h, name, is_root,
+            sw.get("model") or "", sw.get("stp_priority") if is_root else None,
+        ))
 
     if unlinked_label_y is not None:
         ux, uy, uw, uh = positions[unlinked[0]]

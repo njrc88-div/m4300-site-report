@@ -89,22 +89,30 @@ switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
 toward the access layer sits further left, and the legend is ordered to
 match (access/other switches first, core switches second). Boxes are
-narrow and tall rather than wide and short, with just the switch's
-hostname inside - rotated 90 degrees to read top-to-bottom, the same
-convention every other label on the diagram uses, and centered in the
-box (sized to fit the full name, not just enough to be recognizable).
-Model and STP root bridge priority were both tried in the box too (as
-side-by-side columns, then as proportional stacked bands, then as a
-tightly-packed stacked block) but none of it actually read cleanly at
-the box sizes this diagram produces - the hostname is the one thing that
-needs to be in the box at a glance; model is already shown in that
-switch's own report section, and which core actually won root election
-is visible from the box color (navy) without spelling out the number too.
-Box height is sized dynamically against a page-height budget (shrinking
-as more switches share a tier, growing when there are few), and the
-whole diagram is rendered at that exact pixel size — not auto-scaled —
-so it fills the page instead of sitting at whatever size its content
-naturally needs.
+narrow and tall rather than wide and short, with the hostname as a bold
+heading and (root/core switches only get STP priority; every box gets
+model) smaller, lighter sub-headings below it - all rotated 90 degrees to
+read top-to-bottom, the same convention every other label on the diagram
+uses, and the whole group tightly packed and centered in the box.
+
+The hostname's own space is reserved first, sized to its full text - it
+must never truncate before its distinguishing suffix (e.g. "Edge-NE-88-11"
+vs "-12") - and only what's left is split between the sub-headings, which
+*can* tolerate truncation: STP priority (0-65535, at most 5 digits) gets
+only the small reservation its own actual digit count needs, and model -
+which varies a lot in length and can't always fit anyway - gets whatever
+of the remaining space that leaves, rather than splitting the leftover
+space by a fixed proportion and leaving both a few characters short of
+meaning anything. That's a deliberate departure from treating every line
+as equally space-constrained - three earlier rounds (side-by-side
+columns, proportional bands sized off the box's full height, then a
+tightly packed block still budgeted by those same proportional weights)
+all made the hostname compete for space with its own sub-headings instead
+of getting what it actually needs first. Box height is sized dynamically
+against a page-height budget (shrinking as more switches share a tier,
+growing when there are few), and the whole diagram is rendered at that
+exact pixel size — not auto-scaled — so it fills the page instead of
+sitting at whatever size its content naturally needs.
 
 Root selection: real MLAG status (domain ID + system MAC, from the AVUI
 API) is authoritative when available — two switches reporting the same
@@ -166,7 +174,9 @@ the box's whole height is what actually guarantees none of them, or
 their labels, can collide - sharing one slot per LAG and nudging members
 apart locally could still drift a label into a neighboring box or a
 different LAG's label depending on that particular line's angle, which a
-truly independent slot per line can't do.
+truly independent slot per line can't do. Root switches also show their
+STP root bridge priority, when the switch reports one, so you can see at
+a glance which core actually won root election.
 
 ## Data pulled from the switch
 
