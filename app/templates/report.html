@@ -192,6 +192,22 @@
           {% endfor %}
         </table>
       {% endif %}
+      {% if data.details %}
+        <table class="data">
+          <tr><th>Unit</th><th>Model</th><th>Role</th><th>Firmware</th><th>Boot</th><th>Serial</th><th>Uptime</th></tr>
+          {% for u in data.details %}
+          <tr>
+            <td>{{ u.unit }}</td>
+            <td>{{ u.model or '-' }}</td>
+            <td>{{ 'Management' if u.management else 'Member' }}{{ ' (active)' if u.active else '' }}</td>
+            <td>{{ u.fwVer or '-' }}</td>
+            <td>{{ u.bootVer or '-' }}</td>
+            <td>{{ u.sn or '-' }}</td>
+            <td>{{ u.upTime or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      {% endif %}
 
     {% elif module.id == 'firmware' %}
       <table class="kv">
@@ -291,6 +307,28 @@
         {% endfor %}
       </table>
       {% else %}<div class="empty-note">No LAG groups configured.</div>{% endif %}
+
+    {% elif module.id == 'mlag' %}
+      <table class="kv">
+        <tr><td class="k">Domain ID</td><td>{{ data.mlag.domainId if data.mlag.domainId is not none else '-' }}</td></tr>
+        <tr><td class="k">Admin Status</td><td>{{ data.mlag.adminStatus or '-' }}</td></tr>
+        <tr><td class="k">Operational Status</td><td>{{ data.mlag.operStatus or '-' }}</td></tr>
+        <tr><td class="k">Self Role</td><td>{{ data.mlag.selfRole or '-' }}</td></tr>
+        <tr><td class="k">Peer Role</td><td>{{ data.mlag.peerRole or '-' }}</td></tr>
+        <tr><td class="k">Peer Detection</td><td>{{ data.mlag.peerDetectionStatus or '-' }}</td></tr>
+        <tr><td class="k">System MAC</td><td>{{ data.mlag.mac or '-' }}</td></tr>
+        <tr><td class="k">System Priority</td><td>{{ data.mlag.mlagSystemPrio if data.mlag.mlagSystemPrio is not none else '-' }}</td></tr>
+      </table>
+      {% if data.mlag.peerLinkInfo %}
+        <h4 style="color:#001E62;font-size:9.5pt;margin:0.3cm 0 0.15cm;">Peer Link</h4>
+        <table class="kv">
+          <tr><td class="k">Port Channel</td><td>{{ data.mlag.peerLinkInfo.portChannelId or '-' }}</td></tr>
+          <tr><td class="k">Admin Status</td><td>{{ data.mlag.peerLinkInfo.adminStatus or '-' }}</td></tr>
+          <tr><td class="k">Type</td><td>{{ data.mlag.peerLinkInfo.type or '-' }}</td></tr>
+          <tr><td class="k">Member Ports</td><td>{{ (data.mlag.peerLinkInfo.portList or [])|join(', ') or '-' }}</td></tr>
+          <tr><td class="k">VLANs</td><td>{{ (data.mlag.peerLinkInfo.vlanList or [])|join(', ') or '-' }}</td></tr>
+        </table>
+      {% endif %}
 
     {% elif module.id == 'vlans' %}
       {% for v in data.vlans %}

@@ -15,6 +15,19 @@ special-case one model over the other. There's no switch-model gate on
 which modules you can run; whatever a given switch actually supports,
 works.
 
+**Two API generations, one client.** A separate, newer "AVUI" API
+(Swagger 2.0, session-header auth) also exists and covers the same
+M4250/M4300/M4350/M4500 line with a richer surface — notably real MLAG
+status (vs. inferring a collapsed-core pair from LAG link counts) and an
+LLDP endpoint that returns the neighbor's hostname and management IP
+directly. `NetgearClient.login()` tries the AVUI session-token login
+first and falls back to the original ConfigAgent bearer-token login if
+that fails, so this works against switches that only speak one or the
+other without any configuration. Test Connection reports which one a
+given switch used (`auth_mode`); AVUI-only modules (MLAG) raise a clear
+"not available on this switch" error instead of a confusing failure when
+a switch only speaks ConfigAgent.
+
 ## What it does
 
 The app has three tabs:
@@ -77,9 +90,10 @@ cross paths - get nudged apart automatically.
 | Port Configuration | `/swcfg_port` (per port) |
 | Power over Ethernet | `/poe_config`, `/swcfg_poe?portid=ALL` |
 | Link Aggregation Groups | `/sw_lag_cfg?lag_group=ALL` |
+| MLAG Status | `/mlag_show` — AVUI only, off by default |
 | VLANs & Port Membership | `/swcfg_vlan`, `/swcfg_vlan_membership` (VLAN IDs discovered from port data) |
 | Spanning Tree Protocol | `/stp`, `/dot1s_interfaces` |
-| LLDP Neighbors | `/lldp_remote_devices` |
+| LLDP Neighbors | `/neighbor` on AVUI (hostname + management IP), `/lldp_remote_devices` on ConfigAgent |
 | Fiber / SFP Diagnostics | `/fiber_optics` |
 | MAC Address Table (FDB) | `/fdbs` (off by default in reports — can be large) |
 | Running Configuration | `/device_config?file=running-config` (off by default — not every model/firmware supports it; fails gracefully if not) |

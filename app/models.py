@@ -23,6 +23,7 @@ class TestConnectionResponse(BaseModel):
     model: str | None = None
     firmware: str | None = None
     serial_number: str | None = None
+    auth_mode: str | None = None  # "avui" | "configagent" - which API generation this switch spoke
 
 
 class ExploreRequest(BaseModel):

@@ -15,7 +15,7 @@ from .models import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
-from .modules import MODULES, MODULES_BY_ID
+from .modules import MODULES, MODULES_BY_ID, merge_avui_device_info
 from .netgear_client import NetgearAPIError, NetgearClient
 from .report import render_report_pdf
 from .topology import build_switch_topology
@@ -62,7 +62,8 @@ async def list_modules() -> list[dict]:
 async def test_connection(req: TestConnectionRequest) -> TestConnectionResponse:
     try:
         async with _client_for(req.switch) as client:
-            info = await client.get_device_info()
+            info = merge_avui_device_info(dict(await client.get_device_info()))
+            auth_mode = client.auth_mode
     except NetgearAPIError as exc:
         return TestConnectionResponse(success=False, message=str(exc))
     except Exception as exc:  # connection refused, TLS error, timeout, DNS failure...
@@ -75,6 +76,7 @@ async def test_connection(req: TestConnectionRequest) -> TestConnectionResponse:
         model=info.get("model"),
         firmware=info.get("swVer"),
         serial_number=info.get("serialNumber"),
+        auth_mode=auth_mode,
     )
 
 
@@ -109,7 +111,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
             async with _client_for(switch) as client:
                 # Always pull device_info first - every section header needs it,
                 # and it doubles as the connectivity check for this switch.
-                entry["device_info"] = await client.get_device_info()
+                entry["device_info"] = merge_avui_device_info(dict(await client.get_device_info()))
                 for module in selected_modules:
                     try:
                         entry["modules"][module.id] = await module.fetch(client)

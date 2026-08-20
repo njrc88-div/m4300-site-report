@@ -123,7 +123,10 @@
 
   function modelCell(sw) {
     if (!sw.model) return `<span class="empty-state" style="padding:0">Run Test &rarr;</span>`;
-    return `<div style="font-weight:600">${escapeHtml(sw.model)}</div><div style="color:var(--gray-muted);font-size:0.75rem">${escapeHtml(sw.firmware || "")}</div>`;
+    const authBadge = sw.authMode
+      ? `<span class="status-pill ${sw.authMode === "avui" ? "ok" : "pending"}" style="font-size:0.65rem;padding:0.05rem 0.4rem;margin-top:0.15rem;display:inline-block;">${sw.authMode === "avui" ? "AVUI API" : "ConfigAgent API"}</span>`
+      : "";
+    return `<div style="font-weight:600">${escapeHtml(sw.model)}</div><div style="color:var(--gray-muted);font-size:0.75rem">${escapeHtml(sw.firmware || "")}</div>${authBadge}`;
   }
 
   async function testConnection(sw, tr) {
@@ -141,6 +144,7 @@
       if (data.success) {
         sw.model = data.model || sw.model;
         sw.firmware = data.firmware || sw.firmware;
+        sw.authMode = data.auth_mode || sw.authMode;
       }
     } catch (err) {
       sw.status = "fail";

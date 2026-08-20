@@ -44,9 +44,65 @@ def _fan_status_text(fan_state) -> str:
     return str(fan_state)
 
 
+def _avui_fan_status_text(fan_units: list) -> str:
+    parts = []
+    for unit in fan_units or []:
+        for d in unit.get("details") or []:
+            parts.append(f"{d.get('desc', 'fan')}: {d.get('speed', '?')} RPM")
+    return ", ".join(parts) if parts else "-"
+
+
+def merge_avui_device_info(info: dict) -> dict:
+    """AVUI's /device_info is shaped very differently from ConfigAgent's -
+    stacking-aware (a `details` list, one entry per physical unit) rather
+    than flat fields for a single unit. Fill in the flat keys the existing
+    report table expects from the primary/first unit, and keep the raw
+    per-unit/fan/sensor/cpu/memory arrays too so a stacking-aware switch
+    can show all of that, not just unit 1."""
+    if "details" not in info:
+        return info
+    units = info.get("details") or []
+    primary = next((u for u in units if u.get("management")), units[0] if units else {})
+
+    info.setdefault("macAddr", info.get("mac"))
+    info.setdefault("lanIpAddress", info.get("servicePortIP"))
+    info.setdefault("model", primary.get("model"))
+    info.setdefault("serialNumber", primary.get("sn"))
+    info.setdefault("swVer", primary.get("fwVer"))
+    info.setdefault("bootVersion", primary.get("bootVer"))
+    info.setdefault("upTime", primary.get("upTime"))
+    if info.get("poe") is not None:
+        info.setdefault("poeState", info["poe"])
+
+    cpu = info.get("cpu") or []
+    if cpu:
+        info.setdefault("cpuUsage", cpu[0].get("usage"))
+    memory = info.get("memory") or []
+    if memory:
+        info.setdefault("memoryUsage", memory[0].get("usage"))
+
+    # Normalize the nested per-unit sensor list into the flat
+    # {sensorNum, sensorDesc, sensorTemp} shape the template already knows
+    # how to render, so no template change is needed for the common case.
+    if not info.get("temperatureSensors"):
+        flat_sensors = []
+        for unit in info.get("sensor") or []:
+            for d in unit.get("details") or []:
+                flat_sensors.append({
+                    "sensorNum": d.get("id"), "sensorDesc": d.get("desc"), "sensorTemp": d.get("temp"),
+                })
+        if flat_sensors:
+            info["temperatureSensors"] = flat_sensors
+
+    return info
+
+
 async def _device_info(client: NetgearClient) -> dict:
     info = dict(await client.get_device_info())
-    info["fanState_text"] = _fan_status_text(info.get("fanState"))
+    info = merge_avui_device_info(info)
+    info["fanState_text"] = (
+        _avui_fan_status_text(info.get("fan")) if "fan" in info else _fan_status_text(info.get("fanState"))
+    )
     # Some firmware doesn't populate lanIpAddress at all (observed on a
     # 14.0.6.19 M4350). The address we used to log in IS the management
     # IP - it's a reliable fallback rather than leaving the report blank.
@@ -219,6 +275,13 @@ async def _running_config(client: NetgearClient) -> dict:
     return {"text": "\n".join(str(line) for line in lines)}
 
 
+async def _mlag(client: NetgearClient) -> dict:
+    mlag = dict(await client.get_mlag_status())
+    peer_link = dict(mlag.get("peerLinkInfo") or {})
+    mlag["peerLinkInfo"] = peer_link
+    return {"mlag": mlag}
+
+
 MODULES: list[Module] = [
     Module("device_info", "Device Information", "Overview",
            "Model, serial, firmware, uptime, CPU/memory, fan and temperature status.",
@@ -241,6 +304,10 @@ MODULES: list[Module] = [
     Module("lag", "Link Aggregation Groups", "Ports",
            "Configured LAG/LACP groups and their member ports.",
            True, _lag),
+    Module("mlag", "MLAG Status", "Ports",
+           "Multi-chassis LAG domain, role, and peer-link status. Requires the newer "
+           "AVUI API - not available on every switch/firmware.",
+           False, _mlag),
     Module("vlans", "VLANs & Port Membership", "VLANs",
            "VLANs in use (discovered from port data) with tagged/untagged port membership.",
            True, _vlans),
