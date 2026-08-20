@@ -119,25 +119,31 @@ group of switches lays out as its own tree; any switch with no detected
 link to another switch in the report still gets shown, in an "unlinked"
 column, rather than silently disappearing.
 
-A LAG is drawn as N genuinely parallel straight lines, one per physical
-member (real member ports from LAG config when available, accurate even
-when LLDP only reports one summarized entry for the whole port-channel,
-not one per member) - each in the LAG's own color (cycled from a fixed
-10-color palette, so a given LAG can be traced by eye through a diagram
-where several cross paths) and each with its own interface-number label
-sitting right beside that specific line - one on each side of the
-bundle for a 2-member LAG - rather than one combined "1,4" label
-stranded at the line's midpoint that can't tell you which number belongs
-to which physical cable once several lines cross. Every interface-number
-label reads top-to-bottom, rotated 90 degrees the same as the switch
-boxes' own text, so the whole diagram shares one text orientation. A
-plain (non-LAG) link is one gray line with a single port label at each
-end. Labels that would
-otherwise collide - which happens when several lines land near the same
-point - get nudged apart automatically, and where a line attaches to a
-box is spread evenly along that box's edge (ordered by the other end's
-position) instead of every line pinching to one point, so multiple
-connections fan out the same way on every switch. Root switches also show
+A LAG is drawn as N straight lines, one per physical member (real member
+ports from LAG config when available, accurate even when LLDP only
+reports one summarized entry for the whole port-channel, not one per
+member) - each in the LAG's own color (cycled from a fixed 10-color
+palette, so a given LAG can be traced by eye through a diagram where
+several cross paths) and each with its own interface-number label
+sitting right beside that specific line, rather than one combined "1,4"
+label stranded at the line's midpoint that can't tell you which number
+belongs to which physical cable. Every interface-number label reads
+top-to-bottom, rotated 90 degrees the same as the switch boxes' own text,
+so the whole diagram shares one text orientation. A plain (non-LAG) link
+is one gray line with a single port label at each end.
+
+Every individual physical line touching a box - not just every LAG as a
+whole - gets its own independent, evenly-spaced slot along that box's
+full edge (ordered by the other end's position, then by member index so
+a LAG's members still land adjacent to each other), the same mechanism
+that keeps different switches' connections apart extended down to
+individual cables. A box with four edges' worth of 2-member LAGs plus a
+core-core LAG has nine lines to place; giving each one a real slot across
+the box's whole height is what actually guarantees none of them, or
+their labels, can collide - sharing one slot per LAG and nudging members
+apart locally could still drift a label into a neighboring box or a
+different LAG's label depending on that particular line's angle, which a
+truly independent slot per line can't do. Root switches also show
 their STP root bridge priority, when the switch reports one, so you can
 see at a glance which core actually won root election.
 

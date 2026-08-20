@@ -44,25 +44,31 @@ whatever size its content naturally needs.
 Each LAG gets its own color from a fixed palette (cycled in a stable
 order) so it can be traced by eye through a diagram where several LAGs
 cross paths - a single shared color for every LAG made that impossible.
-A LAG is drawn as N genuinely parallel straight lines, one per physical
-member (real member ports from LAG config, not just a count), each with
-its own single-interface label positioned beside that specific line -
-using the line's own perpendicular offset, so a 2-member LAG's two
-numbers land one on each side of the pair - rather than one label
-combining both members together, which can't tell you which number
-belongs to which physical cable. All interface-number labels read
-top-to-bottom, rotated 90 degrees just like the switch boxes' own text -
-one consistent orientation across the whole diagram rather than
-horizontal numbers next to vertical box labels. Labels sit a fixed pixel
-distance from the box they belong to, not a percentage of the line's
-length - a percentage-based offset put a label farther from its switch
-the longer/more diagonal the line was, scattering labels into the busy
+A LAG is drawn as N genuinely parallel-ish straight lines, one per
+physical member (real member ports from LAG config, not just a count),
+each with its own single-interface label positioned beside that specific
+line - rather than one label combining both members together, which
+can't tell you which number belongs to which physical cable. All
+interface-number labels read top-to-bottom, rotated 90 degrees just like
+the switch boxes' own text - one consistent orientation across the whole
+diagram rather than horizontal numbers next to vertical box labels.
+
+Every individual physical line touching a box - not just every LAG as a
+whole - gets its own genuinely independent, evenly-spaced slot along that
+box's full edge, ordered by the other end's vertical position (so a
+LAG's members still land adjacent to each other) then by member index.
+A box with four edges' worth of 2-member LAGs plus a core-core LAG has
+nine individual lines to place; giving each one a real slot across the
+box's whole height - the same mechanism that already kept different
+switches' connections apart - is what guarantees none of them (or their
+labels) can collide, rather than sharing one slot per LAG and hoping a
+small local offset keeps two members apart without drifting into
+whichever box happens to be nearby. Labels sit a fixed pixel distance
+from the box they belong to, not a percentage of the line's length - a
+percentage-based offset put a label farther from its switch the
+longer/more diagonal the line was, scattering labels into the busy
 crossing area in the middle of the diagram rather than next to the
-switch they describe. Where a line attaches to a box is spread evenly
-along that box's edge - ordered by the other end's vertical position -
-instead of every line pinching to the exact same center point regardless
-of how many lines share that box; same rule for every switch, so the
-fan-out pattern reads consistently across the whole diagram.
+switch they describe.
 """
 from __future__ import annotations
 
@@ -568,29 +574,45 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
     ]
 
-    # Where a line attaches to a box: instead of every line pinching to the
-    # exact vertical center (identical regardless of how many lines share
-    # that box - looks fine with one link, a tangled knot with five), each
-    # switch's edges are spread evenly along its box edge, ordered by the
-    # other end's vertical position - lines fan out top-to-bottom in the
-    # same order their targets appear, the same rule for every switch, so
-    # the attachment pattern reads the same way everywhere on the diagram.
-    attach_order: dict[str, list[frozenset]] = defaultdict(list)
-    for key in edges:
-        a, b = tuple(key)
-        if a in positions and b in positions:
-            attach_order[a].append(key)
-            attach_order[b].append(key)
-    for name, lst in attach_order.items():
-        lst.sort(key=lambda k: positions[next(iter(k - {name}))][1])
+    # Where a line attaches to a box: every *individual physical line* gets
+    # its own evenly-spaced slot along the box edge - not just one slot per
+    # LAG (with its members then squeezed into a narrow sub-budget via an
+    # offset/push that has to avoid both its sibling and the box itself).
+    # A box with 4 edges' worth of 2-member LAGs plus a core-core LAG has 9
+    # individual lines to place, and giving each one a real, independent
+    # slot across the box's *full* height - the same mechanism already used
+    # to keep different switches' connections apart - is what actually
+    # guarantees no two of them (or their labels) can collide, rather than
+    # hoping a small local nudge is enough. Ordered by (other end's
+    # position, member index) so a LAG's members still land adjacent to
+    # each other, not scattered.
+    attach_order: dict[str, list[tuple[frozenset, int]]] = defaultdict(list)
+    for key, edge in edges.items():
+        a, b = sorted(key)
+        if a not in positions or b not in positions:
+            continue
+        n = _link_count(edge) if _link_count(edge) > 1 else 1
+        for i in range(n):
+            attach_order[a].append((key, i))
+            attach_order[b].append((key, i))
 
-    def _anchor_y(name: str, key: frozenset, y: float, h: float) -> float:
+    def _other_y(name: str, key: frozenset) -> float:
+        other = next(iter(key - {name}))
+        if other not in positions:
+            return 0.0
+        oy, oh = positions[other][1], positions[other][3]
+        return oy + oh / 2
+
+    for name, lst in attach_order.items():
+        lst.sort(key=lambda item: (_other_y(name, item[0]), item[1]))
+
+    def _anchor_y(name: str, key: frozenset, member: int, y: float, h: float) -> float:
         lst = attach_order[name]
         n = len(lst)
         if n <= 1:
             return y + h / 2
-        idx = lst.index(key)
-        margin = h * 0.15
+        idx = lst.index((key, member))
+        margin = h * 0.08
         return y + margin + (h - 2 * margin) * idx / (n - 1)
 
     # Each LAG gets its own color (cycling a fixed palette, assigned in a
@@ -635,42 +657,91 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             continue
         ax, ay, aw, ah = positions[a]
         bx, by, bw, bh = positions[b]
+        count = _link_count(edge)
+        is_lag = count > 1
+        color = lag_color.get(key, LINE_COLOR)
+
         if abs(ax - bx) < 1:
             # Same column - a co-root pair stacked vertically (after the
-            # horizontal mirror, both roots share one x). Connect top/bottom
-            # edges straight down the middle, not left/right edges (which
-            # would be a full box-width apart despite ax == bx, producing a
-            # diagonal line instead of the intended straight vertical one).
+            # horizontal mirror, both roots share one x). This is always
+            # the core-core link in practice (rare to have a second
+            # same-column pair), so it doesn't need the full per-member
+            # slot treatment below - connect top/bottom edges straight down
+            # the middle (not left/right edges, which would be a full
+            # box-width apart despite ax == bx, producing a diagonal line
+            # instead of the intended straight vertical one), and spread
+            # any LAG members with a small perpendicular offset.
             if ay <= by:
                 x1, y1 = ax + aw / 2, ay + ah
                 x2, y2 = bx + bw / 2, by
             else:
                 x1, y1 = ax + aw / 2, ay
                 x2, y2 = bx + bw / 2, by + bh
-        elif ax <= bx:
-            # a's box sits left of b's box: connect a's right edge to b's
-            # left edge - the two facing sides.
-            x1, y1 = ax + aw, _anchor_y(a, key, ay, ah)
-            x2, y2 = bx, _anchor_y(b, key, by, bh)
-        else:
-            # a's box sits right of b's box (the common case: "a" is
-            # whichever name sorts first alphabetically, which has nothing
-            # to do with layout position - a core commonly sorts before an
-            # edge by name but sits to its right on screen). Using the
-            # previous branch's edges here would anchor to each box's FAR
-            # side instead of the side actually facing the other switch,
-            # placing the line's endpoint - and so its label - inside the
-            # other box's own footprint, silently hidden under it (boxes
-            # are drawn after lines/labels). Use each box's facing edge
-            # instead, matching actual screen geometry.
-            x1, y1 = ax, _anchor_y(a, key, ay, ah)
-            x2, y2 = bx + bw, _anchor_y(b, key, by, bh)
 
-        count = _link_count(edge)
-        is_lag = count > 1
-        color = lag_color.get(key, LINE_COLOR)
+            if not is_lag:
+                svg_parts.append(
+                    f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                    f'stroke="{color}" stroke-width="1.5"/>'
+                )
+                a_txt = (edge["a_ports"] or ["?"])[0]
+                b_txt = (edge["b_ports"] or ["?"])[0]
+                ax_pt = _label_point(x1, y1, x2, y2, 16)
+                bx_pt = _label_point(x2, y2, x1, y1, 16)
+                a_sign = -1.0 if ax_pt[0] < ax + aw / 2 else 1.0
+                b_sign = -1.0 if bx_pt[0] < bx + bw / 2 else 1.0
+                pending_labels.append((ax_pt[0], ax_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, False, a_sign))
+                pending_labels.append((bx_pt[0], bx_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, False, b_sign))
+                continue
+
+            a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
+            b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
+            n = max(len(a_members), len(b_members), 1)
+            dx, dy = x2 - x1, y2 - y1
+            length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+            px, py = -dy / length, dx / length
+            spacing = 8.0
+            for i in range(n):
+                off = (i - (n - 1) / 2) * spacing
+                lx1, ly1 = x1 + px * off, y1 + py * off
+                lx2, ly2 = x2 + px * off, y2 + py * off
+                svg_parts.append(
+                    f'<line x1="{lx1:.1f}" y1="{ly1:.1f}" x2="{lx2:.1f}" y2="{ly2:.1f}" '
+                    f'stroke="{color}" stroke-width="1.6"/>'
+                )
+                a_txt = a_members[i] if i < len(a_members) else "?"
+                b_txt = b_members[i] if i < len(b_members) else "?"
+                a_base = _label_point(lx1, ly1, lx2, ly2, 16)
+                b_base = _label_point(lx2, ly2, lx1, ly1, 16)
+                push = off * 4.0
+                a_pt = _push_clear_of_box(a_base, px * push, py * push, ax, ay, aw, ah)
+                b_pt = _push_clear_of_box(b_base, px * push, py * push, bx, by, bw, bh)
+                a_sign = -1.0 if a_pt[0] < ax + aw / 2 else 1.0
+                b_sign = -1.0 if b_pt[0] < bx + bw / 2 else 1.0
+                pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True, a_sign))
+                pending_labels.append((b_pt[0], b_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, True, b_sign))
+            continue
+
+        # The common case: box A and box B sit side by side (different
+        # tiers). Every individual physical line - not just every LAG -
+        # gets its own real anchor slot on each box's edge, computed by
+        # _anchor_y from the FULL set of lines that box carries (built
+        # above in attach_order). That's what actually guarantees no two
+        # lines/labels at this box can collide: each one has a genuinely
+        # independent, evenly-spaced position across the box's whole
+        # height, rather than sharing one slot per LAG and then relying on
+        # a local nudge to separate members within it (which could point
+        # either toward or away from the box depending on this specific
+        # line's slope, and get overridden again by collision resolution
+        # against unrelated neighboring labels).
+        if ax <= bx:
+            ax_edge, bx_edge = ax + aw, bx
+        else:
+            ax_edge, bx_edge = ax, bx + bw
 
         if not is_lag:
+            y1 = _anchor_y(a, key, 0, ay, ah)
+            y2 = _anchor_y(b, key, 0, by, bh)
+            x1, x2 = ax_edge, bx_edge
             svg_parts.append(
                 f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
                 f'stroke="{color}" stroke-width="1.5"/>'
@@ -685,41 +756,21 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             pending_labels.append((bx_pt[0], bx_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, False, b_sign))
             continue
 
-        # A LAG is drawn as N genuinely parallel straight lines (one per
-        # physical member, evenly offset perpendicular to the link) so it
-        # reads as an aggregated bundle rather than one cable - and each
-        # line gets its own single-interface label, positioned beside that
-        # specific line (using the line's own perpendicular offset), on
-        # either side of the bundle - not one label combining both members,
-        # which can't tell you which number belongs to which physical
-        # cable.
         a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
         b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
         n = max(len(a_members), len(b_members), 1)
-        dx, dy = x2 - x1, y2 - y1
-        length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
-        px, py = -dy / length, dx / length
-        spacing = 8.0
         for i in range(n):
-            off = (i - (n - 1) / 2) * spacing
-            lx1, ly1 = x1 + px * off, y1 + py * off
-            lx2, ly2 = x2 + px * off, y2 + py * off
+            ly1 = _anchor_y(a, key, i, ay, ah)
+            ly2 = _anchor_y(b, key, i, by, bh)
+            lx1, lx2 = ax_edge, bx_edge
             svg_parts.append(
                 f'<line x1="{lx1:.1f}" y1="{ly1:.1f}" x2="{lx2:.1f}" y2="{ly2:.1f}" '
                 f'stroke="{color}" stroke-width="1.6"/>'
             )
             a_txt = a_members[i] if i < len(a_members) else "?"
             b_txt = b_members[i] if i < len(b_members) else "?"
-            # Anchor to THIS line specifically (lx/ly, not the shared
-            # x1/x2 center line), then push the label further out along
-            # the same perpendicular direction as this line's own offset -
-            # placing it clearly beside its own line rather than crowded
-            # against its sibling member's line and label 6 units away.
-            a_base = _label_point(lx1, ly1, lx2, ly2, 16)
-            b_base = _label_point(lx2, ly2, lx1, ly1, 16)
-            push = off * 4.0
-            a_pt = _push_clear_of_box(a_base, px * push, py * push, ax, ay, aw, ah)
-            b_pt = _push_clear_of_box(b_base, px * push, py * push, bx, by, bw, bh)
+            a_pt = _label_point(lx1, ly1, lx2, ly2, 16)
+            b_pt = _label_point(lx2, ly2, lx1, ly1, 16)
             a_sign = -1.0 if a_pt[0] < ax + aw / 2 else 1.0
             b_sign = -1.0 if b_pt[0] < bx + bw / 2 else 1.0
             pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True, a_sign))
