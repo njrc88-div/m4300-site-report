@@ -132,8 +132,34 @@ async def _identity(client: NetgearClient) -> dict:
     return {"rfc1213": rfc1213, "system_config": sys_config}
 
 
+def _get_any(d: dict, *keys, default=None):
+    for k in keys:
+        if d.get(k) not in (None, ""):
+            return d[k]
+    return default
+
+
+def _compress_ranges(nums: list[int]) -> str:
+    """[9, 10, 11, 13, 17, 18] -> '9-11, 13, 17-18'."""
+    nums = sorted(set(nums))
+    if not nums:
+        return ""
+    ranges: list[str] = []
+    start = prev = nums[0]
+    for n in nums[1:]:
+        if n == prev + 1:
+            prev = n
+            continue
+        ranges.append(str(start) if start == prev else f"{start}-{prev}")
+        start = prev = n
+    ranges.append(str(start) if start == prev else f"{start}-{prev}")
+    return ", ".join(ranges)
+
+
 def _decorate_port_stat(p: dict) -> dict:
     p = dict(p)
+    # Observed field name varies by firmware (portId vs portid vs id).
+    p["portId"] = _get_any(p, "portId", "portid", "id", "port")
     p["status_text"] = enums.decode(enums.PORT_LINK_STATUS, p.get("status"))
     p["speed_text"] = enums.decode(enums.PORT_SPEED, p.get("speed"))
     p["duplex_text"] = enums.decode(enums.PORT_DUPLEX, p.get("duplex"))
@@ -147,8 +173,31 @@ def _decorate_port_stat(p: dict) -> dict:
 
 async def _ports(client: NetgearClient) -> dict:
     stats = await client.get_port_stats("ALL")
-    stats = sorted(stats, key=lambda p: p.get("portId", 0))
-    return {"ports": [_decorate_port_stat(p) for p in stats]}
+    decorated = sorted(
+        (_decorate_port_stat(p) for p in stats), key=lambda p: p.get("portId") or 0
+    )
+
+    # A down port with no description and no LLDP neighbor carries zero
+    # information beyond "it's down" - one line per port for dozens of
+    # unused ports just buries the ports that actually matter. Roll those
+    # into a single summary line; keep anything with real data in the table
+    # even if it happens to be down right now.
+    shown, down_ids = [], []
+    for p in decorated:
+        has_info = bool(p.get("myDesc")) or bool((p.get("neighborInfo") or {}).get("name"))
+        if p.get("status") == 1 and not has_info:
+            try:
+                down_ids.append(int(p.get("portId")))
+            except (TypeError, ValueError):
+                shown.append(p)  # non-numeric port id - can't range-compress, keep it visible
+        else:
+            shown.append(p)
+
+    return {
+        "ports": shown,
+        "down_count": len(down_ids),
+        "down_ports_summary": _compress_ranges(down_ids),
+    }
 
 
 async def _port_config(client: NetgearClient) -> dict:
@@ -190,6 +239,8 @@ async def _lag(client: NetgearClient) -> dict:
     groups = await client.get_lag_groups("ALL")
     decorated = []
     for g in groups:
+        if not g.get("members"):
+            continue  # unused LAG slot - every switch reports all 64, most are empty
         g = dict(g)
         g["type_text"] = enums.decode(enums.LAG_TYPE, g.get("type"))
         g["admin_text"] = enums.fmt_bool(g.get("adminMode"), "Enabled", "Disabled")

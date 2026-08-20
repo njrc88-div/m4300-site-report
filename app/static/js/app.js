@@ -308,6 +308,7 @@
           notes: document.getElementById("rb-notes").value.trim(),
           switches: chosenSwitches,
           modules: Array.from(selectedModuleIds),
+          abridged: document.getElementById("rb-abridged").checked,
         }),
       });
       if (!resp.ok) {

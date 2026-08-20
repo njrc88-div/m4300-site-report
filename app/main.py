@@ -183,6 +183,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
         modules=selected_modules,
         switch_results=switch_results,
         topology_svg=topology_svg,
+        abridged=req.abridged,
     )
 
     filename = f"{req.site_name or 'site'}-switch-report.pdf".replace(" ", "-")

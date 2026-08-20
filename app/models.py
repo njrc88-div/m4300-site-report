@@ -38,3 +38,4 @@ class ReportRequest(BaseModel):
     notes: str = ""
     switches: list[SwitchCredential]
     modules: list[str]
+    abridged: bool = False

@@ -191,7 +191,7 @@
           {% endfor %}
         </table>
       {% endif %}
-      {% if data.details %}
+      {% if data.details and data.details|length > 1 %}
         <table class="data">
           <tr><th>Unit</th><th>Model</th><th>Role</th><th>Firmware</th><th>Boot</th><th>Serial</th><th>Uptime</th></tr>
           {% for u in data.details %}
@@ -251,6 +251,9 @@
         </tr>
         {% endfor %}
       </table>
+      {% if data.down_count %}
+        <div class="empty-note">{{ data.down_count }} additional port{{ 's' if data.down_count != 1 else '' }} down with no active link or description: {{ data.down_ports_summary }}</div>
+      {% endif %}
 
     {% elif module.id == 'port_config' %}
       <table class="data">
@@ -404,7 +407,7 @@
         <tr><td class="k">Root Bridge Priority</td><td>{{ data.global.rootBridgePriority }}</td></tr>
         <tr><td class="k">Root Bridge ID</td><td>{{ data.global.rootBridgeId or '-' }}</td></tr>
       </table>
-      {% if data.interfaces %}
+      {% if data.interfaces and not abridged %}
       <table class="data">
         <tr><th>Interface</th><th>Guard Mode</th><th>Edge Port</th><th>BPDU Filter</th><th>BPDU Flood</th></tr>
         {% for i in data.interfaces %}

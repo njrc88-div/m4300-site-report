@@ -65,7 +65,20 @@ The app has three tabs:
    metadata, and click **Generate PDF Report**. The app logs into every
    selected switch, pulls the selected data, and streams back a PDF
    styled with Diversified branding (cover page, page numbers, section
-   layout) — nothing is saved server-side.
+   layout) — nothing is saved server-side. An **Abridged report** toggle
+   drops low-value per-interface detail that's mostly defaults on a typical
+   switch (currently: the STP per-interface Guard Mode/Edge Port/BPDU
+   table) — off by default, so a fully detailed report is always still one
+   click away.
+
+Report content is cleaned up automatically regardless of the abridged
+toggle: down ports with no description and no LLDP neighbor (i.e.
+genuinely unused, not just temporarily down) are rolled into a single
+summary line instead of one dead row per port; LAG groups with no member
+ports (every switch reports all 64 possible slots, almost all empty) are
+dropped from the table; and the per-unit "Stack Members" table only
+appears for switches that are actually stacked (more than one unit) since
+a single-unit switch just duplicates the fields already shown above it.
 
 When a report covers 2+ switches, a **site topology** page is inserted
 right after the cover page: a hierarchical diagram of switch-to-switch
