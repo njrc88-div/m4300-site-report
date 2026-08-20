@@ -274,6 +274,19 @@ async def _vlans(client: NetgearClient) -> dict:
     return {"vlans": vlans}
 
 
+def stp_priority_from(global_stp: dict) -> int | None:
+    """Best-effort read of the root bridge priority out of a switch's STP
+    global data, for the topology diagram to show next to the core
+    switches (helps confirm which one is actually the STP root). Field
+    name is a straight pass-through from the switch (see _stp below), so
+    this tries the documented name plus the usual drift variants."""
+    value = _get_any(global_stp or {}, "rootBridgePriority", "bridgePriority", "priority", "stpPriority")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _stp(client: NetgearClient) -> dict:
     global_stp = await client.get_stp()
     global_stp = dict(global_stp)

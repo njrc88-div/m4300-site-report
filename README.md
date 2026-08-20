@@ -109,13 +109,19 @@ like a hub (connects to more than just this one switch) — this matters
 because once every uplink is commonly a LAG, not just the core-core link,
 a leaf's LAG to its core is otherwise structurally identical to the real
 core-core LAG. Both become roots, drawn side by side and connected by a
-bold "LAG ×N" loop rather than a single line. Otherwise the single switch
-with the most inter-switch links becomes the root. Each connected group
-of switches lays out as its own tree; any switch
-with no detected link to another switch in the report still gets shown,
-in an "unlinked" column, rather than silently disappearing. Labels that
-would otherwise collide - which happens when redundant/dual-homed links
-cross paths - get nudged apart automatically.
+bold loop rather than a single line, labeled with the real interface
+members on each side (e.g. "LAG 1,2 ↔ 21,22") rather than just a member
+count — pulled from actual LAG config when available, so it's accurate
+even when LLDP only reports one summarized entry for the whole
+port-channel. Otherwise the single switch with the most inter-switch
+links becomes the root. Each connected group of switches lays out as its
+own tree; any switch with no detected link to another switch in the
+report still gets shown, in an "unlinked" column, rather than silently
+disappearing. Labels that would otherwise collide - which happens when
+redundant/dual-homed links cross paths - get nudged apart automatically.
+Root switches also show their STP root bridge priority, when the switch
+reports one, so you can see at a glance which core actually won root
+election.
 
 ## Data pulled from the switch
 

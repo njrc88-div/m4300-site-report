@@ -85,37 +85,46 @@ def _local_port(neighbor: dict) -> str:
     return "?"
 
 
-def _lag_membership(lag_groups: list[dict] | None) -> tuple[dict[str, int], dict[int, int]]:
-    """Maps each local physical port to its LAG group id, and each group id
-    to its real member-port count, from the switch's own LAG configuration.
-    Authoritative over counting LLDP rows - see module docstring."""
-    port_to_group: dict[str, int] = {}
-    group_size: dict[int, int] = {}
+def _port_sort_key(port: str):
+    try:
+        return (0, int(port))
+    except (TypeError, ValueError):
+        return (1, port)
+
+
+def _lag_membership(lag_groups: list[dict] | None) -> dict[str, list[str]]:
+    """Maps each local physical port to the full real member-port list of
+    its LAG group, from the switch's own LAG configuration. Authoritative
+    over counting LLDP rows - see module docstring - and is also what lets
+    the diagram label a LAG with its actual interface members instead of
+    just a count, even when LLDP only reported one summarized entry for
+    the whole port-channel."""
+    port_to_members: dict[str, list[str]] = {}
     for g in lag_groups or []:
-        gid = g.get("groupId")
         members = [str(m) for m in (g.get("members") or [])]
-        if gid is None or not members:
+        if not members:
             continue
-        group_size[gid] = len(members)
         for m in members:
-            port_to_group[m] = gid
-    return port_to_group, group_size
+            port_to_members[m] = members
+    return port_to_members
 
 
 def _build_edges(switches: list[dict]) -> dict[frozenset, dict]:
     """switches: [{"name", "mac", "neighbors": [...], "lag_groups": [...]}].
     Returns edges keyed by frozenset({name_a, name_b}) -> {"a_ports": [...],
-    "b_ports": [...], "a_lag_size": int, "b_lag_size": int}. a/b_lag_size is
-    the real member count when either side's LAG config identifies the link
-    as a port-channel; _link_count() falls back to counting a/b_ports
-    (physical LLDP link count) when neither side has that data."""
+    "b_ports": [...], "a_lag_members": [...] | None, "b_lag_members": [...] | None}.
+    a/b_ports are the physical ports LLDP actually reported; a/b_lag_members
+    is the *real* full member list from LAG config when either side's
+    config identifies the link as a port-channel (can be longer than
+    a/b_ports if LLDP only summarized one entry for the whole LAG).
+    _link_count() and the label prefer the real member list when present."""
     mac_index = {_norm_mac(s["mac"]): s["name"] for s in switches if s.get("mac")}
     name_index = {_norm_name(s["name"]): s["name"] for s in switches}
 
     edges: dict[frozenset, dict] = {}
     for sw in switches:
         this_name = sw["name"]
-        port_to_group, group_size = _lag_membership(sw.get("lag_groups"))
+        port_to_members = _lag_membership(sw.get("lag_groups"))
         for n in sw.get("neighbors") or []:
             match = None
             chassis_id = n.get("chassisId")
@@ -132,23 +141,22 @@ def _build_edges(switches: list[dict]) -> dict[frozenset, dict]:
 
             key = frozenset({this_name, match})
             edge = edges.setdefault(
-                key, {"a_ports": [], "b_ports": [], "a_lag_size": 0, "b_lag_size": 0}
+                key, {"a_ports": [], "b_ports": [], "a_lag_members": None, "b_lag_members": None}
             )
             ordered = sorted(key)
             side = "a_ports" if this_name == ordered[0] else "b_ports"
-            size_key = "a_lag_size" if side == "a_ports" else "b_lag_size"
+            members_key = "a_lag_members" if side == "a_ports" else "b_lag_members"
             port = _local_port(n)
-            group = port_to_group.get(port)
-            token = f"lag:{group}" if group is not None else port
-            if token not in edge[side]:
-                edge[side].append(token)
-            if group is not None:
-                edge[size_key] = max(edge[size_key], group_size.get(group, 2))
+            if port not in edge[side]:
+                edge[side].append(port)
+            members = port_to_members.get(port)
+            if members and (edge[members_key] is None or len(members) > len(edge[members_key])):
+                edge[members_key] = members
     return edges
 
 
 def _link_count(edge: dict) -> int:
-    real = max(edge.get("a_lag_size", 0), edge.get("b_lag_size", 0))
+    real = max(len(edge.get("a_lag_members") or []), len(edge.get("b_lag_members") or []))
     if real:
         return real
     return max(len(edge["a_ports"]), len(edge["b_ports"])) or 1
@@ -296,19 +304,27 @@ def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
 
-def _switch_box(x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool) -> str:
-    """A narrow, tall box with both text lines rotated 90 degrees so they
-    read top-to-bottom - lets the box (and so the whole diagram) use the
-    page's height instead of its width."""
+def _switch_box(
+    x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool,
+    stp_priority: int | None = None,
+) -> str:
+    """A narrow, tall box with text lines rotated 90 degrees so they read
+    top-to-bottom - lets the box (and so the whole diagram) use the page's
+    height instead of its width. A third line showing STP root bridge
+    priority is added when known - mainly useful on the core switches, to
+    show at a glance which one actually won root election."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
     name_chars = max(6, int((h - 16) / 6.5))
-    title_x = x + w * 0.36
-    sub_x = x + w * 0.74
     cy = y + h / 2
-    return f"""
+    stp_text = f"STP Priority {stp_priority}" if stp_priority is not None else None
+    if stp_text:
+        title_x, sub_x, stp_x = x + w * 0.22, x + w * 0.5, x + w * 0.8
+    else:
+        title_x, sub_x, stp_x = x + w * 0.36, x + w * 0.74, None
+    parts = [f"""
       <rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5"
             fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>
       <text x="{title_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {title_x:.1f} {cy:.1f})"
@@ -317,7 +333,14 @@ def _switch_box(x: float, y: float, w: float, h: float, name: str, model: str, i
       <text x="{sub_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {sub_x:.1f} {cy:.1f})"
             font-family="'Liberation Sans', Arial, sans-serif" font-size="8.5"
             fill="{sub_fill}">{escape(_truncate(model, name_chars + 4))}</text>
-    """
+    """]
+    if stp_text and stp_x is not None:
+        parts.append(f"""
+      <text x="{stp_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {stp_x:.1f} {cy:.1f})"
+            font-family="'Liberation Sans', Arial, sans-serif" font-size="7.5"
+            fill="{sub_fill}">{escape(_truncate(stp_text, name_chars + 6))}</text>
+        """)
+    return "".join(parts)
 
 
 def _resolve_label_collisions(
@@ -352,7 +375,8 @@ def _resolve_label_collisions(
 
 def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str,
-    "neighbors": [...], "lag_groups": [...], "mlag": {...} | None}]"""
+    "neighbors": [...], "lag_groups": [...], "mlag": {...} | None,
+    "stp_priority": int | None}]"""
     if len(switches) < 2:
         return None
 
@@ -466,21 +490,30 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             continue
         ax, ay, aw, ah = positions[a]
         bx, by, bw, bh = positions[b]
-        x1, y1 = ax + aw, ay + ah / 2
-        x2, y2 = bx, by + bh / 2
-        if abs(x1 - x2) < 1:  # same column (co-root pair stacked vertically)
+        if abs(ax - bx) < 1:
+            # Same column - a co-root pair stacked vertically (after the
+            # horizontal mirror, both roots share one x). Connect top/bottom
+            # edges straight down the middle, not left/right edges (which
+            # would be a full box-width apart despite ax == bx, producing a
+            # diagonal line instead of the intended straight vertical one).
             if ay <= by:
                 x1, y1 = ax + aw / 2, ay + ah
                 x2, y2 = bx + bw / 2, by
             else:
                 x1, y1 = ax + aw / 2, ay
                 x2, y2 = bx + bw / 2, by + bh
+        else:
+            x1, y1 = ax + aw, ay + ah / 2
+            x2, y2 = bx, by + bh / 2
 
         count = _link_count(edge)
         is_lag = count > 1
-        label = f"LAG ×{count}" if is_lag else (
-            f"{(edge['a_ports'] or ['?'])[0]} ↔ {(edge['b_ports'] or ['?'])[0]}"
-        )
+        if is_lag:
+            a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
+            b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
+            label = f"LAG {','.join(a_members)} ↔ {','.join(b_members)}"
+        else:
+            label = f"{(edge['a_ports'] or ['?'])[0]} ↔ {(edge['b_ports'] or ['?'])[0]}"
         mx, my = (x1 + x2) / 2, (y1 + y2) / 2
 
         if is_lag:
@@ -521,7 +554,9 @@ def build_switch_topology(switches: list[dict]) -> str | None:
 
     for name, (x, y, w, h) in positions.items():
         sw = by_name[name]
-        svg_parts.append(_switch_box(x, y, w, h, name, sw.get("model") or "", name in root_names))
+        svg_parts.append(_switch_box(
+            x, y, w, h, name, sw.get("model") or "", name in root_names, sw.get("stp_priority")
+        ))
 
     if unlinked_label_y is not None:
         ux, uy, uw, uh = positions[unlinked[0]]
