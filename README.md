@@ -76,20 +76,29 @@ switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
 toward the access layer sits further left. Boxes are narrow and tall
 rather than wide and short, with both text lines individually rotated
--90 degrees to read bottom-to-top — that's what lets the diagram use the
+90 degrees to read top-to-bottom — that's what lets the diagram use the
 *page's* full height: box height is sized dynamically against a page-
 height budget (shrinking as more switches share a tier, growing when
 there are few), and the whole thing is rendered at that exact pixel
 size — not auto-scaled — so it fills the page instead of sitting at
 whatever size its content naturally needs.
 
-Root selection: a switch pair with more than one physical LLDP link
-between them (a LAG - LLDP is per-port, so an aggregated link shows up as
-multiple neighbor entries between the same two switches) is treated as a
-collapsed/dual-core pair - both become roots, drawn side by side and
-connected by a bold "LAG ×N" loop rather than a single line. Otherwise
-the single switch with the most inter-switch links becomes the root.
-Each connected group of switches lays out as its own tree; any switch
+Root selection: real MLAG status (domain ID + system MAC, from the AVUI
+API) is authoritative when available — two switches reporting the same
+enabled domain/MAC are, by definition, the two peers of that MLAG, i.e.
+the actual collapsed core, regardless of how the rest of the topology
+happens to be wired. Without that data it falls back to graph shape: a
+switch pair with a LAG between them (from real LAG config when available,
+otherwise more than one physical LLDP link between them — LLDP is
+per-port, so an aggregated link shows up as multiple neighbor entries) is
+treated as a collapsed/dual-core pair *if* the LAG'd partner also looks
+like a hub (connects to more than just this one switch) — this matters
+because once every uplink is commonly a LAG, not just the core-core link,
+a leaf's LAG to its core is otherwise structurally identical to the real
+core-core LAG. Both become roots, drawn side by side and connected by a
+bold "LAG ×N" loop rather than a single line. Otherwise the single switch
+with the most inter-switch links becomes the root. Each connected group
+of switches lays out as its own tree; any switch
 with no detected link to another switch in the report still gets shown,
 in an "unlinked" column, rather than silently disappearing. Labels that
 would otherwise collide - which happens when redundant/dual-homed links

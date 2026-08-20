@@ -106,7 +106,10 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
 
     switch_results = []
     for switch in req.switches:
-        entry: dict = {"switch": switch, "error": None, "modules": {}, "_lldp_neighbors": [], "_lag_groups": []}
+        entry: dict = {
+            "switch": switch, "error": None, "modules": {},
+            "_lldp_neighbors": [], "_lag_groups": [], "_mlag": None,
+        }
         try:
             async with _client_for(switch) as client:
                 # Always pull device_info first - every section header needs it,
@@ -139,6 +142,20 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
                         entry["_lag_groups"] = [dict(g) for g in await client.get_lag_groups("ALL")]
                     except Exception as exc:
                         logger.warning("Topology LAG fetch failed for %s: %s", switch.host, exc)
+
+                # MLAG status is the authoritative signal for which pair of
+                # switches is the real collapsed core - see topology.py. Most
+                # switches won't have it (AVUI-only, and only when actually
+                # configured as an MLAG peer), so this is silently
+                # best-effort, same as the running-config module.
+                mlag_result = entry["modules"].get("mlag")
+                if mlag_result is not None and not mlag_result.get("error"):
+                    entry["_mlag"] = mlag_result.get("mlag")
+                else:
+                    try:
+                        entry["_mlag"] = await client.get_mlag_status()
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.warning("Switch %s unreachable: %s", switch.host, exc)
             entry["error"] = str(exc)
@@ -151,6 +168,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
             "model": (r.get("device_info") or {}).get("model", ""),
             "neighbors": r.get("_lldp_neighbors") or [],
             "lag_groups": r.get("_lag_groups") or [],
+            "mlag": r.get("_mlag"),
         }
         for r in switch_results
         if not r["error"]

@@ -34,7 +34,7 @@ hierarchy/layout math untouched while flipping which edge the root lands
 on.
 
 Boxes are narrow and tall rather than wide and short, with their labels
-rotated to read bottom-to-top - this is what lets the diagram use the
+rotated to read top-to-bottom - this is what lets the diagram use the
 *page's* full height: box height is sized dynamically against a page-
 height budget (shrinking as more switches share a tier, growing when
 there are few), and the diagram is rendered at that exact pixel size
@@ -193,23 +193,77 @@ def _connected_components(
     return components, unlinked
 
 
-def _find_roots(component: list[str], edges: dict[frozenset, dict]) -> list[str]:
-    """A pair with a LAG between them (>1 physical link) is a collapsed-core
-    pair - both become roots. Otherwise fall back to single highest-degree node."""
-    best_key, best_count = None, 1
-    for key, edge in edges.items():
-        a, b = tuple(key)
-        if a not in component or b not in component:
+def _mlag_pairs(switches: list[dict]) -> dict[str, str]:
+    """Groups switches by (domainId, MLAG system MAC) from their MLAG
+    status - two switches reporting the same enabled domain and system MAC
+    are, by definition, the two peers of that MLAG, i.e. the real
+    collapsed core. This is the only reliable signal once a leaf's LAG'd
+    uplink to its core becomes structurally indistinguishable from the
+    real core-core LAG (see _find_roots) - a secondary core with no direct
+    edge connections of its own (everything hangs off the primary, it only
+    backs it up) has the same degree-1-plus-one-LAG signature as a plain
+    edge switch, so graph shape alone can't tell them apart."""
+    groups: dict[tuple, list[str]] = defaultdict(list)
+    for sw in switches:
+        mlag = sw.get("mlag") or {}
+        domain = mlag.get("domainId")
+        mac = _norm_mac(mlag.get("mac"))
+        status = str(mlag.get("adminStatus") or "").strip().lower()
+        if domain is None or not mac or status not in ("enabled", "true", "1"):
             continue
-        count = _link_count(edge)
-        if count > best_count:
-            best_count, best_key = count, key
-    if best_key:
-        return sorted(best_key)
+        groups[(domain, mac)].append(sw["name"])
+    pairs: dict[str, str] = {}
+    for names in groups.values():
+        if len(names) == 2:
+            a, b = names
+            pairs[a] = b
+            pairs[b] = a
+    return pairs
+
+
+def _find_roots(
+    component: list[str], edges: dict[frozenset, dict], mlag_pairs: dict[str, str] | None = None
+) -> list[str]:
+    """A pair with a LAG between them is a collapsed-core pair - both become
+    roots. Otherwise fall back to single highest-degree node.
+
+    Checks real MLAG pairing first (see _mlag_pairs) - authoritative when
+    available. Link count/degree alone can't always identify the pair once
+    every uplink is a LAG, not just the core-core link (real sites now
+    commonly LAG every edge's uplink too): a leaf switch with a 2-member
+    LAG to its core ties with the actual core-core LAG on link count, and
+    if the secondary core has no direct edge connections of its own, it
+    even ties on degree. Degree still helps in the common case where the
+    secondary core *does* have its own edge fan-out (a leaf's LAG'd
+    partner being a hub, degree > 1, means it's not just a leaf itself)."""
+    for name in component:
+        partner = (mlag_pairs or {}).get(name)
+        if partner and partner in component:
+            return sorted([name, partner])
 
     adjacency = _adjacency(component, edges)
     degree = {n: len(adjacency[n]) for n in component}
-    return [sorted(component, key=lambda n: (-degree[n], n))[0]]
+
+    if len(component) == 2:
+        # Can't use degree to tell hub from leaf with only two nodes in the
+        # component - a LAG between them is the best signal available, and
+        # matches the common small-site case (just the two cores).
+        a, b = sorted(component)
+        if _link_count(edges.get(frozenset({a, b}), {"a_ports": [], "b_ports": []})) > 1:
+            return [a, b]
+        return [a]
+
+    root = sorted(component, key=lambda n: (-degree[n], n))[0]
+    best_partner, best_count = None, 1
+    for nb in sorted(adjacency[root]):
+        if degree[nb] <= 1:
+            continue  # a leaf's LAG uplink doesn't make it a co-root
+        count = _link_count(edges.get(frozenset({root, nb}), {"a_ports": [], "b_ports": []}))
+        if count > best_count:
+            best_count, best_partner = count, nb
+    if best_partner:
+        return sorted([root, best_partner])
+    return [root]
 
 
 def _layout_tiers(
@@ -243,8 +297,8 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 def _switch_box(x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool) -> str:
-    """A narrow, tall box with both text lines rotated -90 degrees so they
-    read bottom-to-top - lets the box (and so the whole diagram) use the
+    """A narrow, tall box with both text lines rotated 90 degrees so they
+    read top-to-bottom - lets the box (and so the whole diagram) use the
     page's height instead of its width."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
@@ -257,10 +311,10 @@ def _switch_box(x: float, y: float, w: float, h: float, name: str, model: str, i
     return f"""
       <rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5"
             fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>
-      <text x="{title_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(-90 {title_x:.1f} {cy:.1f})"
+      <text x="{title_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {title_x:.1f} {cy:.1f})"
             font-family="'Liberation Sans', Arial, sans-serif" font-size="11" font-weight="700"
             fill="{text_fill}">{escape(_truncate(name, name_chars))}</text>
-      <text x="{sub_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(-90 {sub_x:.1f} {cy:.1f})"
+      <text x="{sub_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {sub_x:.1f} {cy:.1f})"
             font-family="'Liberation Sans', Arial, sans-serif" font-size="8.5"
             fill="{sub_fill}">{escape(_truncate(model, name_chars + 4))}</text>
     """
@@ -298,7 +352,7 @@ def _resolve_label_collisions(
 
 def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str,
-    "neighbors": [...], "lag_groups": [...]}]"""
+    "neighbors": [...], "lag_groups": [...], "mlag": {...} | None}]"""
     if len(switches) < 2:
         return None
 
@@ -311,6 +365,8 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     if not components:
         return None
 
+    mlag_pairs = _mlag_pairs(switches)
+
     # First pass: figure out every component's tiers/roots up front, so box
     # height can be sized once from the single most-crowded tier anywhere
     # in the diagram - keeps every box the same size instead of each
@@ -319,7 +375,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     max_breadth = 1
     max_tier_count = 1
     for component in components:
-        roots = _find_roots(component, edges)
+        roots = _find_roots(component, edges, mlag_pairs)
         tiers, parent_of = _layout_tiers(component, edges, roots)
         component_layouts.append((component, roots, tiers, parent_of))
         max_breadth = max(max_breadth, max((len(t) for t in tiers), default=1))
