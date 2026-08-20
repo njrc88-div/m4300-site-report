@@ -661,7 +661,7 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         dx, dy = x2 - x1, y2 - y1
         length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
         px, py = -dy / length, dx / length
-        spacing = 4.0
+        spacing = 6.0
         for i in range(n):
             off = (i - (n - 1) / 2) * spacing
             lx1, ly1 = x1 + px * off, y1 + py * off
@@ -672,8 +672,16 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             )
             a_txt = a_members[i] if i < len(a_members) else "?"
             b_txt = b_members[i] if i < len(b_members) else "?"
-            a_pt = _label_point(lx1, ly1, lx2, ly2, 16)
-            b_pt = _label_point(lx2, ly2, lx1, ly1, 16)
+            # Anchor to THIS line specifically (lx/ly, not the shared
+            # x1/x2 center line), then push the label further out along
+            # the same perpendicular direction as this line's own offset -
+            # placing it clearly beside its own line rather than crowded
+            # against its sibling member's line and label 6 units away.
+            a_base = _label_point(lx1, ly1, lx2, ly2, 16)
+            b_base = _label_point(lx2, ly2, lx1, ly1, 16)
+            push = off * 1.8
+            a_pt = (a_base[0] + px * push, a_base[1] + py * push)
+            b_pt = (b_base[0] + px * push, b_base[1] + py * push)
             pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True))
             pending_labels.append((b_pt[0], b_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, True))
 
