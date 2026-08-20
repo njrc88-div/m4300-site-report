@@ -27,6 +27,7 @@ rather than silently returning nothing.
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 
@@ -58,6 +59,25 @@ def _unwrap(data: dict, *preferred_keys: str):
 def _resp_ok(data: dict) -> bool:
     status = (data.get("resp") or {}).get("status")
     return status != "failure" and status != "fail" and status != "error"
+
+
+def _describe_error_body(resp: httpx.Response) -> str:
+    """Turn a non-2xx response into a short, readable message.
+
+    Some endpoints that aren't implemented on a given switch/firmware
+    return an HTML error page (an embedded web server's generic 500/404),
+    not a JSON error - dumping that markup straight into the UI is noisy
+    and reads like a broken app rather than an unsupported endpoint, so
+    pull out just the title/heading when the body looks like HTML."""
+    text = resp.text.strip()
+    content_type = resp.headers.get("content-type", "")
+    if "html" in content_type.lower() or text[:15].lower().lstrip().startswith("<!doctype html") or text[:5].lower() == "<html":
+        match = re.search(r"<title>(.*?)</title>", text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            match = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.IGNORECASE | re.DOTALL)
+        heading = re.sub(r"\s+", " ", match.group(1)).strip() if match else "no further detail"
+        return f"HTTP {resp.status_code} ({heading}) - this endpoint may not be supported on this switch/firmware."
+    return f"HTTP {resp.status_code}: {text[:300]}"
 
 
 def _redact(obj):
@@ -139,7 +159,7 @@ class NetgearClient:
             path = path[len("/api/v1"):]
         resp = await http.request(method, path, **kwargs)
         if resp.status_code >= 400:
-            raise NetgearAPIError(f"{method} {path} -> HTTP {resp.status_code}: {resp.text[:300]}")
+            raise NetgearAPIError(f"{method} {path} -> {_describe_error_body(resp)}")
         try:
             data = resp.json()
         except ValueError as exc:
