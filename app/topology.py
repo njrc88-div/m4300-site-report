@@ -347,14 +347,23 @@ def _switch_box(
     x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool,
     stp_priority: int | None = None,
 ) -> str:
-    """A narrow, tall box with text stacked top-to-bottom - hostname band,
+    """A narrow, tall box with text stacked top-to-bottom - hostname line,
     then model, then (for root switches) STP priority - each individually
-    rotated 90 degrees so it reads top-to-bottom within its own band,
-    rather than the three sharing the box's full height as side-by-side
-    columns. Stacking top-to-bottom is what lets the box read the way a
-    person actually looks for the switch's name first: at the top, biggest
-    text, most of the space; a narrow box only wide enough for one column
-    also lets the diagram fit more switches per tier."""
+    rotated 90 degrees so it reads top-to-bottom, rather than the three
+    sharing the box's full height as side-by-side columns. Stacking
+    top-to-bottom is what lets the box read the way a person actually
+    looks for the switch's name first: at the top, biggest text; a narrow
+    box only wide enough for one column also lets the diagram fit more
+    switches per tier.
+
+    The three lines are packed tightly together and the resulting block
+    centered in the box, rather than each line centered inside its own
+    large proportional slice of the box's full height - a big, tall box
+    (the common case, since the diagram deliberately sizes boxes to fill
+    the page) left large dead gaps between hostname/model/STP when each
+    got a fixed fraction of the whole height regardless of how much space
+    its actual text needed, making them read as three disconnected floating
+    labels rather than three lines of one block."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
@@ -362,40 +371,50 @@ def _switch_box(
     cx = x + w / 2
     # Bare number, no "STP Priority" / "STP" prefix - even the short form
     # doesn't fit next to a 4-digit priority in the space left over once
-    # the hostname takes its share below. Position (third band, only ever
+    # the hostname takes its share below. Position (third line, only ever
     # present on a root/core box) carries the "this is STP priority"
     # meaning instead.
     stp_text = str(stp_priority) if stp_priority is not None else None
 
-    # Hostname gets the majority share and is sized to comfortably fit a
-    # typical switch name (~13 chars) at the box heights this diagram
-    # actually produces - it's the primary identifier and must not
+    # Weights only bound how many characters each line is *allowed*
+    # (guaranteeing the three can never overflow the box between them) -
+    # they no longer dictate where the text sits. Hostname gets the
+    # majority share since it's the primary identifier and must not
     # truncate before its distinguishing suffix (e.g. "Edge-NE-88-11" vs
-    # "-12"). Model and STP priority split what's left evenly.
+    # "-12") at the box heights this diagram actually produces.
     weights = [0.60, 0.22, 0.18] if stp_text else [0.62, 0.38]
-    band_tops = [y]
-    for wgt in weights[:-1]:
-        band_tops.append(band_tops[-1] + h * wgt)
-    band_heights = [h * wgt for wgt in weights]
+    specs = [(name, 10, "700", text_fill, 6.3)]
+    specs.append((model, 8.5, "400", sub_fill, 5.2))
+    if stp_text:
+        specs.append((stp_text, 7.5, "400", sub_fill, 5.2))
 
-    def _band_text(idx: int, text: str, font_size: float, weight: str, fill_color: str, char_px: float) -> str:
-        band_y, band_h = band_tops[idx], band_heights[idx]
-        cy = band_y + band_h / 2
+    lines = []
+    for (text, font_size, weight, fill_color, char_px), wgt in zip(specs, weights):
+        band_h = h * wgt
         chars = max(4, int((band_h - 10) / char_px))
+        truncated = _truncate(text, chars)
+        extent = max(14.0, len(truncated) * char_px + 8)
+        lines.append((truncated, font_size, weight, fill_color, extent))
+
+    line_gap = 9.0
+    block_h = sum(l[4] for l in lines) + line_gap * (len(lines) - 1)
+    cursor = y + (h - block_h) / 2
+
+    def _line_text(text: str, font_size: float, weight: str, fill_color: str, cy: float) -> str:
         return (
             f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="{font_size}" font-weight="{weight}" '
-            f'fill="{fill_color}">{escape(_truncate(text, chars))}</text>'
+            f'fill="{fill_color}">{escape(text)}</text>'
         )
 
     parts = [
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
         f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
-        _band_text(0, name, 10, "700", text_fill, 6.3),
-        _band_text(1, model, 8.5, "400", sub_fill, 5.2),
     ]
-    if stp_text:
-        parts.append(_band_text(2, stp_text, 7.5, "400", sub_fill, 5.2))
+    for text, font_size, weight, fill_color, extent in lines:
+        cy = cursor + extent / 2
+        parts.append(_line_text(text, font_size, weight, fill_color, cy))
+        cursor += extent + line_gap
     return "".join(parts)
 
 

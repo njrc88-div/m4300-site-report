@@ -90,16 +90,23 @@ to left: root/core switch(es) are pinned to the right edge, each hop
 toward the access layer sits further left, and the legend is ordered to
 match (access/other switches first, core switches second). Boxes are
 narrow and tall rather than wide and short, with text stacked
-top-to-bottom inside each one — hostname band at the top (sized to fit a
-full switch name, not just enough to be recognizable), model below that,
-and (root/core switches only) STP root bridge priority at the bottom —
-each band's text individually rotated 90 degrees to read top-to-bottom,
-the same convention every other label on the diagram uses. That's what
-lets the diagram use the *page's* full height: box height is sized
-dynamically against a page-height budget (shrinking as more switches
-share a tier, growing when there are few), and the whole thing is
-rendered at that exact pixel size — not auto-scaled — so it fills the
-page instead of sitting at whatever size its content naturally needs.
+top-to-bottom inside each one — hostname at the top (sized to fit a full
+switch name, not just enough to be recognizable), model below that, and
+(root/core switches only) STP root bridge priority at the bottom — each
+line individually rotated 90 degrees to read top-to-bottom, the same
+convention every other label on the diagram uses. The lines are packed
+tightly together and the resulting block centered in the box, not each
+one centered inside its own large proportional slice of the box's full
+height - a big, tall box (the common case, since the diagram fills the
+page) left large dead gaps between hostname/model/STP when each got a
+fixed fraction of the whole height regardless of how much space its
+actual text needed, making them read as three disconnected floating
+labels rather than three lines of one block. That's what lets the
+diagram use the *page's* full height: box height is sized dynamically
+against a page-height budget (shrinking as more switches share a tier,
+growing when there are few), and the whole thing is rendered at that
+exact pixel size — not auto-scaled — so it fills the page instead of
+sitting at whatever size its content naturally needs.
 
 Root selection: real MLAG status (domain ID + system MAC, from the AVUI
 API) is authoritative when available — two switches reporting the same
