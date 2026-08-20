@@ -87,14 +87,19 @@ LLDP Neighbors module was checked for the report body. Non-switch LLDP
 neighbors (APs, phones, etc.) are filtered out — only links between two
 switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
-toward the access layer sits further left. Boxes are narrow and tall
-rather than wide and short, with both text lines individually rotated
-90 degrees to read top-to-bottom — that's what lets the diagram use the
-*page's* full height: box height is sized dynamically against a page-
-height budget (shrinking as more switches share a tier, growing when
-there are few), and the whole thing is rendered at that exact pixel
-size — not auto-scaled — so it fills the page instead of sitting at
-whatever size its content naturally needs.
+toward the access layer sits further left, and the legend is ordered to
+match (access/other switches first, core switches second). Boxes are
+narrow and tall rather than wide and short, with text stacked
+top-to-bottom inside each one — hostname band at the top (sized to fit a
+full switch name, not just enough to be recognizable), model below that,
+and (root/core switches only) STP root bridge priority at the bottom —
+each band's text individually rotated 90 degrees to read top-to-bottom,
+the same convention every other label on the diagram uses. That's what
+lets the diagram use the *page's* full height: box height is sized
+dynamically against a page-height budget (shrinking as more switches
+share a tier, growing when there are few), and the whole thing is
+rendered at that exact pixel size — not auto-scaled — so it fills the
+page instead of sitting at whatever size its content naturally needs.
 
 Root selection: real MLAG status (domain ID + system MAC, from the AVUI
 API) is authoritative when available — two switches reporting the same
@@ -120,10 +125,14 @@ when LLDP only reports one summarized entry for the whole port-channel,
 not one per member) - each in the LAG's own color (cycled from a fixed
 10-color palette, so a given LAG can be traced by eye through a diagram
 where several cross paths) and each with its own interface-number label
-sitting right beside it, rather than one combined "1,4" label stranded at
-the line's midpoint that can't tell you which number belongs to which
-physical cable once several lines cross. A plain (non-LAG) link is one
-gray line with a single port label at each end. Labels that would
+sitting right beside that specific line - one on each side of the
+bundle for a 2-member LAG - rather than one combined "1,4" label
+stranded at the line's midpoint that can't tell you which number belongs
+to which physical cable once several lines cross. Every interface-number
+label reads top-to-bottom, rotated 90 degrees the same as the switch
+boxes' own text, so the whole diagram shares one text orientation. A
+plain (non-LAG) link is one gray line with a single port label at each
+end. Labels that would
 otherwise collide - which happens when several lines land near the same
 point - get nudged apart automatically, and where a line attaches to a
 box is spread evenly along that box's edge (ordered by the other end's

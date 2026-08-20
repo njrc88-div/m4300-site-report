@@ -133,9 +133,12 @@
   <h2>Site topology</h2>
   <div class="sub">Switch-to-switch links discovered via LLDP. Non-switch neighbors (access points, phones, etc.) are omitted.</div>
   {{ topology_svg | safe }}
+  <!-- Ordered left-to-right to match the diagram's own layout: access/
+       other switches sit on the left of the diagram, core switches on
+       the right - see topology.py's module docstring. -->
   <div class="legend">
-    <span class="item"><span class="swatch" style="background:#001E62;"></span>core switch(es)</span>
     <span class="item"><span class="swatch" style="background:#EEF0F5;border:0.5pt solid #B1B3B3;"></span>other switches</span>
+    <span class="item"><span class="swatch" style="background:#001E62;"></span>core switch(es)</span>
     <span class="item"><span class="swatch" style="background:linear-gradient(90deg,#00BFB2,#7B2FF7,#E8590C);width:14pt;height:3pt;border-radius:0;vertical-align:middle;"></span>LAG (each one its own colour) - interface IDs shown at each end</span>
   </div>
 </div>

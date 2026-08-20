@@ -45,21 +45,24 @@ Each LAG gets its own color from a fixed palette (cycled in a stable
 order) so it can be traced by eye through a diagram where several LAGs
 cross paths - a single shared color for every LAG made that impossible.
 A LAG is drawn as N genuinely parallel straight lines, one per physical
-member (real member ports from LAG config, not just a count), labeled
-once per end with all that end's members together (e.g. "1,4") - a real
-site with every uplink LAG'd, not just the core-core link, can easily
-have 8-10 LAGs on one diagram; a label per individual physical member
-(double that) buries it in small text, so members share one label per
-end instead. Labels sit a fixed pixel distance from the box they belong
-to, not a percentage of the line's length - a percentage-based offset
-put a label farther from its switch the longer/more diagonal the line
-was, scattering labels into the busy crossing area in the middle of the
-diagram rather than next to the switch they describe. Where a line
-attaches to a box is spread evenly along that box's edge - ordered by
-the other end's vertical position - instead of every line pinching to
-the exact same center point regardless of how many lines share that box;
-same rule for every switch, so the fan-out pattern reads consistently
-across the whole diagram.
+member (real member ports from LAG config, not just a count), each with
+its own single-interface label positioned beside that specific line -
+using the line's own perpendicular offset, so a 2-member LAG's two
+numbers land one on each side of the pair - rather than one label
+combining both members together, which can't tell you which number
+belongs to which physical cable. All interface-number labels read
+top-to-bottom, rotated 90 degrees just like the switch boxes' own text -
+one consistent orientation across the whole diagram rather than
+horizontal numbers next to vertical box labels. Labels sit a fixed pixel
+distance from the box they belong to, not a percentage of the line's
+length - a percentage-based offset put a label farther from its switch
+the longer/more diagonal the line was, scattering labels into the busy
+crossing area in the middle of the diagram rather than next to the
+switch they describe. Where a line attaches to a box is spread evenly
+along that box's edge - ordered by the other end's vertical position -
+instead of every line pinching to the exact same center point regardless
+of how many lines share that box; same rule for every switch, so the
+fan-out pattern reads consistently across the whole diagram.
 """
 from __future__ import annotations
 
@@ -336,68 +339,91 @@ def _switch_box(
     x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool,
     stp_priority: int | None = None,
 ) -> str:
-    """A narrow, tall box with text lines rotated 90 degrees so they read
-    top-to-bottom - lets the box (and so the whole diagram) use the page's
-    height instead of its width. A third line showing STP root bridge
-    priority is added when known - mainly useful on the core switches, to
-    show at a glance which one actually won root election."""
+    """A narrow, tall box with text stacked top-to-bottom - hostname band,
+    then model, then (for root switches) STP priority - each individually
+    rotated 90 degrees so it reads top-to-bottom within its own band,
+    rather than the three sharing the box's full height as side-by-side
+    columns. Stacking top-to-bottom is what lets the box read the way a
+    person actually looks for the switch's name first: at the top, biggest
+    text, most of the space; a narrow box only wide enough for one column
+    also lets the diagram fit more switches per tier."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    name_chars = max(6, int((h - 16) / 6.5))
-    cy = y + h / 2
-    stp_text = f"STP Priority {stp_priority}" if stp_priority is not None else None
+    cx = x + w / 2
+    # Bare number, no "STP Priority" / "STP" prefix - even the short form
+    # doesn't fit next to a 4-digit priority in the space left over once
+    # the hostname takes its share below. Position (third band, only ever
+    # present on a root/core box) carries the "this is STP priority"
+    # meaning instead.
+    stp_text = str(stp_priority) if stp_priority is not None else None
+
+    # Hostname gets the majority share and is sized to comfortably fit a
+    # typical switch name (~13 chars) at the box heights this diagram
+    # actually produces - it's the primary identifier and must not
+    # truncate before its distinguishing suffix (e.g. "Edge-NE-88-11" vs
+    # "-12"). Model and STP priority split what's left evenly.
+    weights = [0.60, 0.22, 0.18] if stp_text else [0.62, 0.38]
+    band_tops = [y]
+    for wgt in weights[:-1]:
+        band_tops.append(band_tops[-1] + h * wgt)
+    band_heights = [h * wgt for wgt in weights]
+
+    def _band_text(idx: int, text: str, font_size: float, weight: str, fill_color: str, char_px: float) -> str:
+        band_y, band_h = band_tops[idx], band_heights[idx]
+        cy = band_y + band_h / 2
+        chars = max(4, int((band_h - 10) / char_px))
+        return (
+            f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
+            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="{font_size}" font-weight="{weight}" '
+            f'fill="{fill_color}">{escape(_truncate(text, chars))}</text>'
+        )
+
+    parts = [
+        f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
+        f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
+        _band_text(0, name, 11, "700", text_fill, 6.8),
+        _band_text(1, model, 8.5, "400", sub_fill, 5.2),
+    ]
     if stp_text:
-        title_x, sub_x, stp_x = x + w * 0.22, x + w * 0.5, x + w * 0.8
-    else:
-        title_x, sub_x, stp_x = x + w * 0.36, x + w * 0.74, None
-    parts = [f"""
-      <rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5"
-            fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>
-      <text x="{title_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {title_x:.1f} {cy:.1f})"
-            font-family="'Liberation Sans', Arial, sans-serif" font-size="11" font-weight="700"
-            fill="{text_fill}">{escape(_truncate(name, name_chars))}</text>
-      <text x="{sub_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {sub_x:.1f} {cy:.1f})"
-            font-family="'Liberation Sans', Arial, sans-serif" font-size="8.5"
-            fill="{sub_fill}">{escape(_truncate(model, name_chars + 4))}</text>
-    """]
-    if stp_text and stp_x is not None:
-        parts.append(f"""
-      <text x="{stp_x:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {stp_x:.1f} {cy:.1f})"
-            font-family="'Liberation Sans', Arial, sans-serif" font-size="7.5"
-            fill="{sub_fill}">{escape(_truncate(stp_text, name_chars + 6))}</text>
-        """)
+        parts.append(_band_text(2, stp_text, 7.5, "400", sub_fill, 5.2))
     return "".join(parts)
 
 
 def _resolve_label_collisions(
     labels: list[tuple[float, float, float, str, str, bool]],
 ) -> list[tuple[float, float, float, str, str, bool]]:
-    """Nudge label Y positions apart when their boxes would overlap.
+    """Nudge label X positions apart when their (rotated, vertical-reading)
+    text would overlap.
 
-    With one label per edge end clustered near each switch (see caller),
-    several labels routinely land close together right where their lines
-    fan out. Moving a label off its exact anchor point is a normal
-    diagramming trick and reads better than overlapping, unreadable text.
+    Every label on the diagram reads top-to-bottom now, matching the
+    switch boxes' own text - so unlike ordinary horizontal labels, the
+    space a label actually needs runs vertically (`extent`, roughly its
+    character count) while its footprint sideways is just the fixed
+    thickness of one line of text. Collision therefore checks vertical
+    overlap and resolves it by nudging horizontally - the transpose of the
+    old horizontal-label version. With one label per physical LAG member
+    landing right where several lines fan out near a switch, collisions
+    here are routine, not an edge case.
     """
-    label_h = 13
+    label_w = 13
     placed: list[tuple[float, float, float, str, str, bool]] = []
-    for mx, my, w, label, color, bold in sorted(labels, key=lambda t: (t[0], t[1])):
-        y = my
+    for mx, my, extent, label, color, bold in sorted(labels, key=lambda t: (t[1], t[0])):
+        x = mx
         for _ in range(20):
             collision = next(
                 (
                     p for p in placed
-                    if abs(p[0] - mx) < (w + p[2]) / 2
-                    and abs(p[1] - y) < label_h + 2
+                    if abs(p[1] - my) < (extent + p[2]) / 2
+                    and abs(p[0] - x) < label_w + 2
                 ),
                 None,
             )
             if not collision:
                 break
-            y = collision[1] + label_h + 2
-        placed.append((mx, y, w, label, color, bold))
+            x = collision[0] + label_w + 2
+        placed.append((x, my, extent, label, color, bold))
     return placed
 
 
@@ -617,21 +643,18 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             b_txt = (edge["b_ports"] or ["?"])[0]
             ax_pt = _label_point(x1, y1, x2, y2, 16)
             bx_pt = _label_point(x2, y2, x1, y1, 16)
-            pending_labels.append((ax_pt[0], ax_pt[1], 22 + len(a_txt) * 4.3, a_txt, color, False))
-            pending_labels.append((bx_pt[0], bx_pt[1], 22 + len(b_txt) * 4.3, b_txt, color, False))
+            pending_labels.append((ax_pt[0], ax_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, False))
+            pending_labels.append((bx_pt[0], bx_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, False))
             continue
 
         # A LAG is drawn as N genuinely parallel straight lines (one per
         # physical member, evenly offset perpendicular to the link) so it
-        # reads as an aggregated bundle rather than one cable - but labeled
-        # once per end (both members together, e.g. "1,4"), not once per
-        # individual line. Labeling every physical member separately (4
-        # labels per LAG instead of 2) reads fine with one or two LAGs on
-        # the page; with the ~8-10 a real dual-core, all-uplinks-LAG'd site
-        # produces, it buries the diagram in small text. Two per end still
-        # tells you exactly which ports are members - just not which
-        # specific line is which within the pair, a distinction that
-        # rarely matters and isn't worth doubling the visual noise for.
+        # reads as an aggregated bundle rather than one cable - and each
+        # line gets its own single-interface label, positioned beside that
+        # specific line (using the line's own perpendicular offset), on
+        # either side of the bundle - not one label combining both members,
+        # which can't tell you which number belongs to which physical
+        # cable.
         a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
         b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
         n = max(len(a_members), len(b_members), 1)
@@ -647,18 +670,21 @@ def build_switch_topology(switches: list[dict]) -> str | None:
                 f'<line x1="{lx1:.1f}" y1="{ly1:.1f}" x2="{lx2:.1f}" y2="{ly2:.1f}" '
                 f'stroke="{color}" stroke-width="1.6"/>'
             )
+            a_txt = a_members[i] if i < len(a_members) else "?"
+            b_txt = b_members[i] if i < len(b_members) else "?"
+            a_pt = _label_point(lx1, ly1, lx2, ly2, 16)
+            b_pt = _label_point(lx2, ly2, lx1, ly1, 16)
+            pending_labels.append((a_pt[0], a_pt[1], 10 + len(a_txt) * 5.5, a_txt, color, True))
+            pending_labels.append((b_pt[0], b_pt[1], 10 + len(b_txt) * 5.5, b_txt, color, True))
 
-        a_label = ",".join(a_members) or "?"
-        b_label = ",".join(b_members) or "?"
-        ax_pt = _label_point(x1, y1, x2, y2, 16)
-        bx_pt = _label_point(x2, y2, x1, y1, 16)
-        pending_labels.append((ax_pt[0], ax_pt[1], 18 + len(a_label) * 4.3, a_label, color, True))
-        pending_labels.append((bx_pt[0], bx_pt[1], 18 + len(b_label) * 4.3, b_label, color, True))
-
-    for x, y, label_w, label, color, bold in _resolve_label_collisions(pending_labels):
+    # Every label reads top-to-bottom (rotated 90 degrees), matching the
+    # switch boxes' own text - one consistent orientation across the whole
+    # diagram instead of horizontal numbers next to vertical box labels.
+    for x, y, extent, label, color, bold in _resolve_label_collisions(pending_labels):
+        rect_w, rect_h = 13, extent
         svg_parts.append(
-            f'<rect x="{x - label_w / 2:.1f}" y="{y - 9:.1f}" width="{label_w:.1f}" height="13" fill="{WHITE}"/>'
-            f'<text x="{x:.1f}" y="{y + 1:.1f}" text-anchor="middle" '
+            f'<rect x="{x - rect_w / 2:.1f}" y="{y - rect_h / 2:.1f}" width="{rect_w:.1f}" height="{rect_h:.1f}" fill="{WHITE}"/>'
+            f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" transform="rotate(90 {x:.1f} {y:.1f})" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="7.5" '
             f'font-weight="{700 if bold else 400}" '
             f'fill="{color}">{escape(label)}</text>'
