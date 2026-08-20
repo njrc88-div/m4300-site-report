@@ -40,6 +40,18 @@ height budget (shrinking as more switches share a tier, growing when
 there are few), and the diagram is rendered at that exact pixel size
 rather than auto-scaled, so it fills the page instead of sitting at
 whatever size its content naturally needs.
+
+Each LAG gets its own color from a fixed palette (cycled in a stable
+order) so it can be traced by eye through a diagram where several LAGs
+cross paths - a single shared color for every LAG made that impossible.
+Interface IDs are labeled once near each end (the real member ports from
+LAG config, not just a count) rather than one combined label stranded at
+the line's midpoint, often nowhere near either switch once several lines
+cross. Where a line attaches to a box is spread evenly along that box's
+edge - ordered by the other end's vertical position - instead of every
+line pinching to the exact same center point regardless of how many
+lines share that box; same rule for every switch, so the fan-out pattern
+reads consistently across the whole diagram.
 """
 from __future__ import annotations
 
@@ -52,6 +64,14 @@ TEAL = "#00BFB2"
 GRAY_FILL = "#EEF0F5"
 GRAY_BORDER = "#B1B3B3"
 GRAY_TEXT = "#605E5C"
+
+# One color per LAG, cycled in a stable order - lets a given aggregated
+# link be traced by eye through a diagram where several LAGs cross paths.
+# Chosen for contrast against the white page and against each other.
+LAG_PALETTE = [
+    "#00BFB2", "#7B2FF7", "#E8590C", "#1E88E5", "#D81B60",
+    "#43A047", "#FB8C00", "#8E24AA", "#00838F", "#C0CA33",
+]
 LINE_COLOR = "#9A9C9F"
 WHITE = "#FFFFFF"
 
@@ -344,18 +364,18 @@ def _switch_box(
 
 
 def _resolve_label_collisions(
-    labels: list[tuple[float, float, float, str, bool]],
-) -> list[tuple[float, float, float, str, bool]]:
+    labels: list[tuple[float, float, float, str, str, bool]],
+) -> list[tuple[float, float, float, str, str, bool]]:
     """Nudge label Y positions apart when their boxes would overlap.
 
-    Redundant/dual-homed links cross paths, and two edges' midpoints can
-    end up close together even though the lines themselves go to different
-    boxes. Moving the label off the exact line midpoint is a normal
+    With one label per edge end clustered near each switch (see caller),
+    several labels routinely land close together right where their lines
+    fan out. Moving a label off its exact anchor point is a normal
     diagramming trick and reads better than overlapping, unreadable text.
     """
     label_h = 13
-    placed: list[tuple[float, float, float, str, bool]] = []
-    for mx, my, w, label, is_lag in sorted(labels, key=lambda t: (t[0], t[1])):
+    placed: list[tuple[float, float, float, str, str, bool]] = []
+    for mx, my, w, label, color, bold in sorted(labels, key=lambda t: (t[0], t[1])):
         y = my
         for _ in range(20):
             collision = next(
@@ -369,7 +389,7 @@ def _resolve_label_collisions(
             if not collision:
                 break
             y = collision[1] + label_h + 2
-        placed.append((mx, y, w, label, is_lag))
+        placed.append((mx, y, w, label, color, bold))
     return placed
 
 
@@ -478,11 +498,50 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
     ]
 
+    # Where a line attaches to a box: instead of every line pinching to the
+    # exact vertical center (identical regardless of how many lines share
+    # that box - looks fine with one link, a tangled knot with five), each
+    # switch's edges are spread evenly along its box edge, ordered by the
+    # other end's vertical position - lines fan out top-to-bottom in the
+    # same order their targets appear, the same rule for every switch, so
+    # the attachment pattern reads the same way everywhere on the diagram.
+    attach_order: dict[str, list[frozenset]] = defaultdict(list)
+    for key in edges:
+        a, b = tuple(key)
+        if a in positions and b in positions:
+            attach_order[a].append(key)
+            attach_order[b].append(key)
+    for name, lst in attach_order.items():
+        lst.sort(key=lambda k: positions[next(iter(k - {name}))][1])
+
+    def _anchor_y(name: str, key: frozenset, y: float, h: float) -> float:
+        lst = attach_order[name]
+        n = len(lst)
+        if n <= 1:
+            return y + h / 2
+        idx = lst.index(key)
+        margin = h * 0.15
+        return y + margin + (h - 2 * margin) * idx / (n - 1)
+
+    # Each LAG gets its own color (cycling a fixed palette, assigned in a
+    # stable order) so a given aggregated link can be traced by eye through
+    # a diagram where several LAGs cross paths - a single shared teal for
+    # every LAG made that impossible. Non-LAG single-physical-link edges
+    # stay neutral gray; they're the exception, not what needs disambiguating.
+    lag_keys = sorted(
+        (key for key, edge in edges.items() if _link_count(edge) > 1),
+        key=lambda k: tuple(sorted(k)),
+    )
+    lag_color = {key: LAG_PALETTE[i % len(LAG_PALETTE)] for i, key in enumerate(lag_keys)}
+
     # Connector lines are drawn immediately (boxes get drawn on top of their
     # ends afterwards). Labels are collected and placed in a second pass,
-    # after lines, so overlapping labels - which happen when redundant/
-    # dual-homed links cross paths - can be nudged apart from each other.
-    pending_labels: list[tuple[float, float, float, str, bool]] = []  # (mx, my, w, label, is_lag)
+    # after lines, so overlapping labels - which happen when several lines
+    # attach near the same point - can be nudged apart from each other.
+    pending_labels: list[tuple[float, float, float, str, str, bool]] = []  # (x, y, w, label, color, bold)
+
+    def _label_point(x1, y1, x2, y2, t):
+        return x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
 
     for key, edge in edges.items():
         a, b = tuple(key)
@@ -503,17 +562,18 @@ def build_switch_topology(switches: list[dict]) -> str | None:
                 x1, y1 = ax + aw / 2, ay
                 x2, y2 = bx + bw / 2, by + bh
         else:
-            x1, y1 = ax + aw, ay + ah / 2
-            x2, y2 = bx, by + bh / 2
+            x1, y1 = ax + aw, _anchor_y(a, key, ay, ah)
+            x2, y2 = bx, _anchor_y(b, key, by, bh)
 
         count = _link_count(edge)
         is_lag = count > 1
+        color = lag_color.get(key, LINE_COLOR)
         if is_lag:
-            a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
-            b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
-            label = f"LAG {','.join(a_members)} ↔ {','.join(b_members)}"
+            a_label = ",".join(sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key))
+            b_label = ",".join(sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key))
         else:
-            label = f"{(edge['a_ports'] or ['?'])[0]} ↔ {(edge['b_ports'] or ['?'])[0]}"
+            a_label = (edge["a_ports"] or ["?"])[0]
+            b_label = (edge["b_ports"] or ["?"])[0]
         mx, my = (x1 + x2) / 2, (y1 + y2) / 2
 
         if is_lag:
@@ -528,34 +588,42 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             c2x, c2y = mx - px * bow, my - py * bow
             svg_parts.append(
                 f'<path d="M {x1:.1f} {y1:.1f} Q {c1x:.1f} {c1y:.1f} {x2:.1f} {y2:.1f}" '
-                f'fill="none" stroke="{TEAL}" stroke-width="2"/>'
+                f'fill="none" stroke="{color}" stroke-width="2"/>'
             )
             svg_parts.append(
                 f'<path d="M {x1:.1f} {y1:.1f} Q {c2x:.1f} {c2y:.1f} {x2:.1f} {y2:.1f}" '
-                f'fill="none" stroke="{TEAL}" stroke-width="2"/>'
+                f'fill="none" stroke="{color}" stroke-width="2"/>'
             )
         else:
             svg_parts.append(
                 f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-                f'stroke="{LINE_COLOR}" stroke-width="1.5"/>'
+                f'stroke="{color}" stroke-width="1.5"/>'
             )
 
-        label_w = 26 + len(label) * 4.3
-        pending_labels.append((mx, my, label_w, label, is_lag))
+        # Interface IDs sit close to the switch they belong to (one label
+        # near each end) rather than one combined label stranded in the
+        # middle of the diagram, often nowhere near either box once lines
+        # cross - each end's label is exactly the ports on that end.
+        ax_pt = _label_point(x1, y1, x2, y2, 0.14)
+        bx_pt = _label_point(x1, y1, x2, y2, 0.86)
+        pending_labels.append((ax_pt[0], ax_pt[1], 22 + len(a_label) * 4.3, a_label, color, is_lag))
+        pending_labels.append((bx_pt[0], bx_pt[1], 22 + len(b_label) * 4.3, b_label, color, is_lag))
 
-    for mx, my, label_w, label, is_lag in _resolve_label_collisions(pending_labels):
+    for x, y, label_w, label, color, bold in _resolve_label_collisions(pending_labels):
         svg_parts.append(
-            f'<rect x="{mx - label_w / 2:.1f}" y="{my - 9:.1f}" width="{label_w:.1f}" height="13" fill="{WHITE}"/>'
-            f'<text x="{mx:.1f}" y="{my + 1:.1f}" text-anchor="middle" '
+            f'<rect x="{x - label_w / 2:.1f}" y="{y - 9:.1f}" width="{label_w:.1f}" height="13" fill="{WHITE}"/>'
+            f'<text x="{x:.1f}" y="{y + 1:.1f}" text-anchor="middle" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="7.5" '
-            f'font-weight="{700 if is_lag else 400}" '
-            f'fill="{TEAL if is_lag else GRAY_TEXT}">{escape(label)}</text>'
+            f'font-weight="{700 if bold else 400}" '
+            f'fill="{color}">{escape(label)}</text>'
         )
 
     for name, (x, y, w, h) in positions.items():
         sw = by_name[name]
+        is_root = name in root_names
         svg_parts.append(_switch_box(
-            x, y, w, h, name, sw.get("model") or "", name in root_names, sw.get("stp_priority")
+            x, y, w, h, name, sw.get("model") or "", is_root,
+            sw.get("stp_priority") if is_root else None,
         ))
 
     if unlinked_label_y is not None:
