@@ -106,7 +106,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
 
     switch_results = []
     for switch in req.switches:
-        entry: dict = {"switch": switch, "error": None, "modules": {}, "_lldp_neighbors": []}
+        entry: dict = {"switch": switch, "error": None, "modules": {}, "_lldp_neighbors": [], "_lag_groups": []}
         try:
             async with _client_for(switch) as client:
                 # Always pull device_info first - every section header needs it,
@@ -118,8 +118,10 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
                     except Exception as exc:
                         logger.warning("Module %s failed for %s: %s", module.id, switch.host, exc)
                         entry["modules"][module.id] = {"error": str(exc)}
-                # Also pull LLDP data for the topology diagram even if the
-                # LLDP Neighbors module itself wasn't selected for the report body.
+                # Also pull LLDP and LAG data for the topology diagram even if
+                # those modules weren't selected for the report body - LAG
+                # membership is what lets the diagram tell a real
+                # aggregated link from two independent physical links.
                 lldp_result = entry["modules"].get("lldp")
                 if lldp_result is not None and not lldp_result.get("error"):
                     entry["_lldp_neighbors"] = lldp_result.get("neighbors", [])
@@ -128,6 +130,15 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
                         entry["_lldp_neighbors"] = await client.get_lldp_neighbors()
                     except Exception as exc:
                         logger.warning("Topology LLDP fetch failed for %s: %s", switch.host, exc)
+
+                lag_result = entry["modules"].get("lag")
+                if lag_result is not None and not lag_result.get("error"):
+                    entry["_lag_groups"] = lag_result.get("groups", [])
+                else:
+                    try:
+                        entry["_lag_groups"] = [dict(g) for g in await client.get_lag_groups("ALL")]
+                    except Exception as exc:
+                        logger.warning("Topology LAG fetch failed for %s: %s", switch.host, exc)
         except Exception as exc:
             logger.warning("Switch %s unreachable: %s", switch.host, exc)
             entry["error"] = str(exc)
@@ -139,6 +150,7 @@ async def generate_report(req: ReportRequest) -> StreamingResponse:
             "mac": (r.get("device_info") or {}).get("macAddr"),
             "model": (r.get("device_info") or {}).get("model", ""),
             "neighbors": r.get("_lldp_neighbors") or [],
+            "lag_groups": r.get("_lag_groups") or [],
         }
         for r in switch_results
         if not r["error"]

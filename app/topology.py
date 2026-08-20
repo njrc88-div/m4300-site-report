@@ -4,14 +4,24 @@ Only switch-to-switch links are drawn - LLDP neighbors that aren't one of
 the other switches in this report (APs, phones, uplinks to something
 outside the report, etc.) are ignored. The diagram is a hierarchical tree.
 
-Root selection: if any pair of switches in a connected component has more
-than one physical LLDP link between them (a LAG - LLDP is per-port, so a
-4-member LAG shows up as 4 separate neighbor entries between the same two
-switches), that pair is treated as a *co-root* - a collapsed/dual-core
-design where both switches are peers, not parent/child. Everything else in
-the component is laid out by hop distance from whichever co-root it's
-actually attached to. If no LAG is found anywhere in the component, it
-falls back to a single root: the switch with the most inter-switch links.
+LAG detection: a link is a LAG if either switch's actual LAG configuration
+(`/sw_lag_cfg`, passed in as each switch's `lag_groups`) shows the local
+port used in that link as a member of a port-channel - that's
+authoritative, since it reflects real member-port counts regardless of
+whether the switch's LLDP happens to report one entry per physical member
+or one summarized entry per port-channel. When neither side's LAG data
+places the port in a group (config not fetched, or the field genuinely
+isn't a LAG), it falls back to the older heuristic: more than one physical
+LLDP link between the same two switches implies a LAG (LLDP is per-port, so
+a 4-member LAG shows up as 4 separate neighbor entries).
+
+Root selection: if any pair of switches in a connected component has a LAG
+between them (by either signal above), that pair is treated as a *co-root*
+- a collapsed/dual-core design where both switches are peers, not
+parent/child. Everything else in the component is laid out by hop distance
+from whichever co-root it's actually attached to. If no LAG is found
+anywhere in the component, it falls back to a single root: the switch with
+the most inter-switch links.
 
 Any switch with no detected link to another switch in the report is still
 shown, in an "unlinked" column, so nothing goes missing silently.
@@ -75,16 +85,37 @@ def _local_port(neighbor: dict) -> str:
     return "?"
 
 
+def _lag_membership(lag_groups: list[dict] | None) -> tuple[dict[str, int], dict[int, int]]:
+    """Maps each local physical port to its LAG group id, and each group id
+    to its real member-port count, from the switch's own LAG configuration.
+    Authoritative over counting LLDP rows - see module docstring."""
+    port_to_group: dict[str, int] = {}
+    group_size: dict[int, int] = {}
+    for g in lag_groups or []:
+        gid = g.get("groupId")
+        members = [str(m) for m in (g.get("members") or [])]
+        if gid is None or not members:
+            continue
+        group_size[gid] = len(members)
+        for m in members:
+            port_to_group[m] = gid
+    return port_to_group, group_size
+
+
 def _build_edges(switches: list[dict]) -> dict[frozenset, dict]:
-    """switches: [{"name", "mac", "neighbors": [...]}]. Returns edges keyed
-    by frozenset({name_a, name_b}) -> {"a_ports": [...], "b_ports": [...]}.
-    Multiple ports on a side means a LAG was detected between that pair."""
+    """switches: [{"name", "mac", "neighbors": [...], "lag_groups": [...]}].
+    Returns edges keyed by frozenset({name_a, name_b}) -> {"a_ports": [...],
+    "b_ports": [...], "a_lag_size": int, "b_lag_size": int}. a/b_lag_size is
+    the real member count when either side's LAG config identifies the link
+    as a port-channel; _link_count() falls back to counting a/b_ports
+    (physical LLDP link count) when neither side has that data."""
     mac_index = {_norm_mac(s["mac"]): s["name"] for s in switches if s.get("mac")}
     name_index = {_norm_name(s["name"]): s["name"] for s in switches}
 
     edges: dict[frozenset, dict] = {}
     for sw in switches:
         this_name = sw["name"]
+        port_to_group, group_size = _lag_membership(sw.get("lag_groups"))
         for n in sw.get("neighbors") or []:
             match = None
             chassis_id = n.get("chassisId")
@@ -100,16 +131,26 @@ def _build_edges(switches: list[dict]) -> dict[frozenset, dict]:
                 continue
 
             key = frozenset({this_name, match})
-            edge = edges.setdefault(key, {"a_ports": [], "b_ports": []})
+            edge = edges.setdefault(
+                key, {"a_ports": [], "b_ports": [], "a_lag_size": 0, "b_lag_size": 0}
+            )
             ordered = sorted(key)
             side = "a_ports" if this_name == ordered[0] else "b_ports"
+            size_key = "a_lag_size" if side == "a_ports" else "b_lag_size"
             port = _local_port(n)
-            if port not in edge[side]:
-                edge[side].append(port)
+            group = port_to_group.get(port)
+            token = f"lag:{group}" if group is not None else port
+            if token not in edge[side]:
+                edge[side].append(token)
+            if group is not None:
+                edge[size_key] = max(edge[size_key], group_size.get(group, 2))
     return edges
 
 
 def _link_count(edge: dict) -> int:
+    real = max(edge.get("a_lag_size", 0), edge.get("b_lag_size", 0))
+    if real:
+        return real
     return max(len(edge["a_ports"]), len(edge["b_ports"])) or 1
 
 
@@ -256,7 +297,8 @@ def _resolve_label_collisions(
 
 
 def build_switch_topology(switches: list[dict]) -> str | None:
-    """switches: [{"name": str, "mac": str|None, "model": str, "neighbors": [...]}]"""
+    """switches: [{"name": str, "mac": str|None, "model": str,
+    "neighbors": [...], "lag_groups": [...]}]"""
     if len(switches) < 2:
         return None
 
