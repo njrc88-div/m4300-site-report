@@ -282,6 +282,24 @@ async def _mlag(client: NetgearClient) -> dict:
     return {"mlag": mlag}
 
 
+async def _ptp(client: NetgearClient) -> dict:
+    status = await client.get_ptp_status()
+    sw = dict(status.get("switchPtpCfg") or {})
+    sw["ptpMode_text"] = enums.decode(enums.PTP_MODE, sw.get("ptpMode"))
+    bc = dict(status.get("linuxptpConfig") or {})
+    if bc:
+        bc["clockOperMode_text"] = enums.decode(enums.PTP_CLOCK_OPER_MODE, bc.get("clockOperMode"))
+    return {"switch": sw, "boundary_clock": bc}
+
+
+async def _multicast(client: NetgearClient) -> dict:
+    return {
+        "groups": await client.get_multicast_groups(),
+        "mode": await client.get_multicast_mode(),
+        "block_list": await client.get_multicast_block_list(),
+    }
+
+
 MODULES: list[Module] = [
     Module("device_info", "Device Information", "Overview",
            "Model, serial, firmware, uptime, CPU/memory, fan and temperature status.",
@@ -323,6 +341,15 @@ MODULES: list[Module] = [
     Module("fdb", "MAC Address Table (FDB)", "Topology",
            "Full forwarding database - can be large; off by default.",
            False, _fdb),
+    Module("ptp", "PTP Status", "PTP",
+           "Precision Time Protocol mode and boundary-clock detail (role, source, intervals). "
+           "Requires the newer AVUI API - not available on every switch/firmware.",
+           False, _ptp),
+    Module("multicast", "Multicast / IGMP", "Multicast",
+           "Active IGMP-learned multicast group subscriptions, per-port multicast mode, and "
+           "the multicast block list. Requires the newer AVUI API - not available on every "
+           "switch/firmware.",
+           False, _multicast),
     Module("running_config", "Running Configuration", "Config",
            "Full running-config text export. Not supported on every model/firmware - "
            "off by default and skipped gracefully if the switch rejects it.",

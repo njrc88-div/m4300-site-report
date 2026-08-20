@@ -330,6 +330,55 @@
         </table>
       {% endif %}
 
+    {% elif module.id == 'ptp' %}
+      <table class="kv">
+        <tr><td class="k">PTP Mode</td><td>{{ data.switch.ptpMode_text }}</td></tr>
+      </table>
+      {% if data.boundary_clock %}
+        <h4 style="color:#001E62;font-size:9.5pt;margin:0.3cm 0 0.15cm;">Boundary Clock</h4>
+        <table class="kv">
+          <tr><td class="k">Admin Mode</td><td>{{ 'Enabled' if data.boundary_clock.adminMode else 'Disabled' }}</td></tr>
+          <tr><td class="k">Process Running</td><td>{{ 'Yes' if data.boundary_clock.processRunningStatus else 'No' }}</td></tr>
+          <tr><td class="k">Clock Identity</td><td>{{ data.boundary_clock.identity or '-' }}</td></tr>
+          <tr><td class="k">Clock Role</td><td>{{ data.boundary_clock.clockRole if data.boundary_clock.clockRole is not none else '-' }}</td></tr>
+          <tr><td class="k">Operating Mode</td><td>{{ data.boundary_clock.clockOperMode_text }}</td></tr>
+          <tr><td class="k">Source IPv4</td><td>{{ data.boundary_clock.sourceIPv4Addr or '-' }}</td></tr>
+          <tr><td class="k">Domain</td><td>{{ data.boundary_clock.domain if data.boundary_clock.domain is not none else '-' }}</td></tr>
+          <tr><td class="k">Priority 1 / 2</td><td>{{ data.boundary_clock.priority1 if data.boundary_clock.priority1 is not none else '-' }} / {{ data.boundary_clock.priority2 if data.boundary_clock.priority2 is not none else '-' }}</td></tr>
+          <tr><td class="k">Sync / Announce / Delay-Req Interval</td><td>{{ data.boundary_clock.syncInterval if data.boundary_clock.syncInterval is not none else '-' }} / {{ data.boundary_clock.announceInterval if data.boundary_clock.announceInterval is not none else '-' }} / {{ data.boundary_clock.delayReqInterval if data.boundary_clock.delayReqInterval is not none else '-' }}</td></tr>
+        </table>
+      {% else %}<div class="empty-note">No boundary-clock process reported (switch is not running as a PTP boundary clock).</div>{% endif %}
+
+    {% elif module.id == 'multicast' %}
+      {% if data.groups %}
+      <table class="data">
+        <tr><th>Unit</th><th>Port</th><th>VLAN</th><th>Group</th><th>Subscriber</th><th>Type</th></tr>
+        {% for g in data.groups %}
+        <tr>
+          <td>{{ g.unit if g.unit is not none else '-' }}</td>
+          <td>{{ g.port if g.port is not none else '-' }}</td>
+          <td>{{ g.vlanId if g.vlanId is not none else '-' }}</td>
+          <td>{{ g.multicastAddress or '-' }}</td>
+          <td>{{ g.subscriberAddress or '-' }}</td>
+          <td>{{ g.type or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="empty-note">No active multicast group subscriptions.</div>{% endif %}
+      {% if data.block_list %}
+        <h4 style="color:#001E62;font-size:9.5pt;margin:0.3cm 0 0.15cm;">Blocked Multicast Ranges</h4>
+        <div>{{ data.block_list|join(', ') }}</div>
+      {% endif %}
+      {% if data.mode.physicalPort %}
+        <h4 style="color:#001E62;font-size:9.5pt;margin:0.3cm 0 0.15cm;">Per-Port Multicast Mode</h4>
+        <table class="data">
+          <tr><th>Port</th><th>Mode</th></tr>
+          {% for p in data.mode.physicalPort %}
+          <tr><td>{{ p.portNum }}</td><td>{{ p.multicastMode if p.multicastMode is not none else '-' }}</td></tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+
     {% elif module.id == 'vlans' %}
       {% for v in data.vlans %}
       <div class="vlan-block">

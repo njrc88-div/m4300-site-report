@@ -281,6 +281,43 @@ class NetgearClient:
         data = await self._request("GET", "/api/v1/mlag_show")
         return _unwrap(data, "mlag", "Mlag")
 
+    # -- PTP (Precision Time Protocol) --------------------------------------
+
+    async def get_ptp_status(self) -> dict:
+        """AVUI only. Combines the switch-wide PTP mode with the
+        Linux-PTP boundary-clock detail endpoint - the latter 404s on units
+        that aren't running as a boundary clock, which is normal, not an
+        error, so that half is best-effort."""
+        self._require_avui("PTP status")
+        sw_cfg = _unwrap(await self._request("GET", "/sw_ptp_cfg"), "switchPtpCfg")
+        try:
+            bc_data = await self._request("GET", "/api/v1/linuxptp/ptp_bc_cfg")
+            bc_cfg = _unwrap(bc_data, "linuxptpConfig")
+        except NetgearAPIError:
+            bc_cfg = {}
+        return {"switchPtpCfg": sw_cfg, "linuxptpConfig": bc_cfg}
+
+    # -- Multicast / IGMP ----------------------------------------------------
+
+    async def get_multicast_groups(self) -> list[dict]:
+        """AVUI only. Active IGMP-learned multicast subscriptions - which
+        AV stream is being pulled by which port, on which VLAN."""
+        self._require_avui("Multicast groups")
+        data = await self._request("GET", "/multicast_groups")
+        groups = _unwrap(data, "multicastGroups")
+        rows = groups.get("rows") if isinstance(groups, dict) else None
+        return rows or []
+
+    async def get_multicast_mode(self) -> dict:
+        self._require_avui("Multicast mode")
+        data = await self._request("GET", "/multicast_mode")
+        return _unwrap(data, "multicastModeConfig")
+
+    async def get_multicast_block_list(self) -> list[str]:
+        self._require_avui("Multicast block list")
+        data = await self._request("GET", "/multicast_block_address")
+        return _unwrap(data, "blockAddressList") or []
+
     # -- VLANs -------------------------------------------------------------
 
     async def get_vlan(self, vlanid: int) -> dict:

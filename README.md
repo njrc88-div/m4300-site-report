@@ -103,6 +103,8 @@ cross paths - get nudged apart automatically.
 | LLDP Neighbors | `/neighbor` on AVUI (hostname + management IP), `/lldp_remote_devices` on ConfigAgent |
 | Fiber / SFP Diagnostics | `/fiber_optics` |
 | MAC Address Table (FDB) | `/fdbs` (off by default in reports — can be large) |
+| PTP Status | `/sw_ptp_cfg`, `/linuxptp/ptp_bc_cfg` — AVUI only, off by default |
+| Multicast / IGMP | `/multicast_groups`, `/multicast_mode`, `/multicast_block_address` — AVUI only, off by default |
 | Running Configuration | `/device_config?file=running-config` (off by default — not every model/firmware supports it; fails gracefully if not) |
 
 Adding a new endpoint is a matter of adding one client method in

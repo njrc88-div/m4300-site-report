@@ -73,6 +73,10 @@ STP_GUARD_MODE = {0: "Loop", 1: "Root", 2: "None"}
 
 LAG_TYPE = {0: "Dynamic (LACP)", 1: "Static"}
 
+PTP_MODE = {0: "Disabled", 1: "Transparent Clock", 2: "Boundary Clock"}
+
+PTP_CLOCK_OPER_MODE = {0: "None", 1: "One-Step", 2: "Two-Step"}
+
 CHASSIS_ID_SUBTYPE = {
     1: "Chassis Component",
     2: "Interface Alias",
