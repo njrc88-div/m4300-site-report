@@ -343,79 +343,28 @@ def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
 
 
-def _switch_box(
-    x: float, y: float, w: float, h: float, name: str, model: str, is_root: bool,
-    stp_priority: int | None = None,
-) -> str:
-    """A narrow, tall box with text stacked top-to-bottom - hostname line,
-    then model, then (for root switches) STP priority - each individually
-    rotated 90 degrees so it reads top-to-bottom, rather than the three
-    sharing the box's full height as side-by-side columns. Stacking
-    top-to-bottom is what lets the box read the way a person actually
-    looks for the switch's name first: at the top, biggest text; a narrow
-    box only wide enough for one column also lets the diagram fit more
-    switches per tier.
-
-    The three lines are packed tightly together and the resulting block
-    centered in the box, rather than each line centered inside its own
-    large proportional slice of the box's full height - a big, tall box
-    (the common case, since the diagram deliberately sizes boxes to fill
-    the page) left large dead gaps between hostname/model/STP when each
-    got a fixed fraction of the whole height regardless of how much space
-    its actual text needed, making them read as three disconnected floating
-    labels rather than three lines of one block."""
+def _switch_box(x: float, y: float, w: float, h: float, name: str, is_root: bool) -> str:
+    """A narrow, tall box with just the hostname, rotated 90 degrees to
+    read top-to-bottom and centered in the box. Model and STP priority
+    were dropped after repeated attempts at fitting all three (side-by-
+    side columns, proportional bands, then a tightly-packed centered
+    block) still didn't read cleanly - the hostname is the one thing that
+    actually needs to be in the box at a glance; model is already shown in
+    that switch's own report section, and root election is visible from
+    which box is navy/teal without needing the number spelled out too."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
-    sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    cx = x + w / 2
-    # Bare number, no "STP Priority" / "STP" prefix - even the short form
-    # doesn't fit next to a 4-digit priority in the space left over once
-    # the hostname takes its share below. Position (third line, only ever
-    # present on a root/core box) carries the "this is STP priority"
-    # meaning instead.
-    stp_text = str(stp_priority) if stp_priority is not None else None
-
-    # Weights only bound how many characters each line is *allowed*
-    # (guaranteeing the three can never overflow the box between them) -
-    # they no longer dictate where the text sits. Hostname gets the
-    # majority share since it's the primary identifier and must not
-    # truncate before its distinguishing suffix (e.g. "Edge-NE-88-11" vs
-    # "-12") at the box heights this diagram actually produces.
-    weights = [0.60, 0.22, 0.18] if stp_text else [0.62, 0.38]
-    specs = [(name, 10, "700", text_fill, 6.3)]
-    specs.append((model, 8.5, "400", sub_fill, 5.2))
-    if stp_text:
-        specs.append((stp_text, 7.5, "400", sub_fill, 5.2))
-
-    lines = []
-    for (text, font_size, weight, fill_color, char_px), wgt in zip(specs, weights):
-        band_h = h * wgt
-        chars = max(4, int((band_h - 10) / char_px))
-        truncated = _truncate(text, chars)
-        extent = max(14.0, len(truncated) * char_px + 8)
-        lines.append((truncated, font_size, weight, fill_color, extent))
-
-    line_gap = 9.0
-    block_h = sum(l[4] for l in lines) + line_gap * (len(lines) - 1)
-    cursor = y + (h - block_h) / 2
-
-    def _line_text(text: str, font_size: float, weight: str, fill_color: str, cy: float) -> str:
-        return (
-            f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
-            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="{font_size}" font-weight="{weight}" '
-            f'fill="{fill_color}">{escape(text)}</text>'
-        )
-
-    parts = [
+    cx, cy = x + w / 2, y + h / 2
+    chars = max(4, int((h - 16) / 6.3))
+    text = _truncate(name, chars)
+    return (
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
-        f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
-    ]
-    for text, font_size, weight, fill_color, extent in lines:
-        cy = cursor + extent / 2
-        parts.append(_line_text(text, font_size, weight, fill_color, cy))
-        cursor += extent + line_gap
-    return "".join(parts)
+        f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>'
+        f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
+        f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="11" font-weight="700" '
+        f'fill="{text_fill}">{escape(text)}</text>'
+    )
 
 
 def _resolve_label_collisions(
@@ -560,9 +509,8 @@ def _legend_svg(width: float) -> str:
 
 
 def build_switch_topology(switches: list[dict]) -> str | None:
-    """switches: [{"name": str, "mac": str|None, "model": str,
-    "neighbors": [...], "lag_groups": [...], "mlag": {...} | None,
-    "stp_priority": int | None}]"""
+    """switches: [{"name": str, "mac": str|None, "neighbors": [...],
+    "lag_groups": [...], "mlag": {...} | None}]"""
     if len(switches) < 2:
         return None
 
@@ -880,12 +828,8 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         )
 
     for name, (x, y, w, h) in positions.items():
-        sw = by_name[name]
         is_root = name in root_names
-        svg_parts.append(_switch_box(
-            x, y, w, h, name, sw.get("model") or "", is_root,
-            sw.get("stp_priority") if is_root else None,
-        ))
+        svg_parts.append(_switch_box(x, y, w, h, name, is_root))
 
     if unlinked_label_y is not None:
         ux, uy, uw, uh = positions[unlinked[0]]

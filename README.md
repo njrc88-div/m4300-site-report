@@ -89,24 +89,22 @@ switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
 toward the access layer sits further left, and the legend is ordered to
 match (access/other switches first, core switches second). Boxes are
-narrow and tall rather than wide and short, with text stacked
-top-to-bottom inside each one — hostname at the top (sized to fit a full
-switch name, not just enough to be recognizable), model below that, and
-(root/core switches only) STP root bridge priority at the bottom — each
-line individually rotated 90 degrees to read top-to-bottom, the same
-convention every other label on the diagram uses. The lines are packed
-tightly together and the resulting block centered in the box, not each
-one centered inside its own large proportional slice of the box's full
-height - a big, tall box (the common case, since the diagram fills the
-page) left large dead gaps between hostname/model/STP when each got a
-fixed fraction of the whole height regardless of how much space its
-actual text needed, making them read as three disconnected floating
-labels rather than three lines of one block. That's what lets the
-diagram use the *page's* full height: box height is sized dynamically
-against a page-height budget (shrinking as more switches share a tier,
-growing when there are few), and the whole thing is rendered at that
-exact pixel size — not auto-scaled — so it fills the page instead of
-sitting at whatever size its content naturally needs.
+narrow and tall rather than wide and short, with just the switch's
+hostname inside - rotated 90 degrees to read top-to-bottom, the same
+convention every other label on the diagram uses, and centered in the
+box (sized to fit the full name, not just enough to be recognizable).
+Model and STP root bridge priority were both tried in the box too (as
+side-by-side columns, then as proportional stacked bands, then as a
+tightly-packed stacked block) but none of it actually read cleanly at
+the box sizes this diagram produces - the hostname is the one thing that
+needs to be in the box at a glance; model is already shown in that
+switch's own report section, and which core actually won root election
+is visible from the box color (navy) without spelling out the number too.
+Box height is sized dynamically against a page-height budget (shrinking
+as more switches share a tier, growing when there are few), and the
+whole diagram is rendered at that exact pixel size — not auto-scaled —
+so it fills the page instead of sitting at whatever size its content
+naturally needs.
 
 Root selection: real MLAG status (domain ID + system MAC, from the AVUI
 API) is authoritative when available — two switches reporting the same
@@ -168,9 +166,7 @@ the box's whole height is what actually guarantees none of them, or
 their labels, can collide - sharing one slot per LAG and nudging members
 apart locally could still drift a label into a neighboring box or a
 different LAG's label depending on that particular line's angle, which a
-truly independent slot per line can't do. Root switches also show
-their STP root bridge priority, when the switch reports one, so you can
-see at a glance which core actually won root election.
+truly independent slot per line can't do.
 
 ## Data pulled from the switch
 
