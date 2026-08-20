@@ -95,6 +95,8 @@ class NetgearClient:
         self.port = port
         self._username = username
         self._password = password
+        self._verify_tls = verify_tls
+        self._timeout = timeout
         self._token: str | None = None
         self._session_token: str | None = None
         self.auth_mode: str | None = None  # "avui" | "configagent"
@@ -103,6 +105,14 @@ class NetgearClient:
             verify=verify_tls,
             timeout=timeout,
         )
+        # AVUI's Swagger spec declares `scheme: https` with no port, which
+        # means it defaults to 443 (the switch's normal web-GUI port) - a
+        # different port than ConfigAgent's dedicated REST API, which the
+        # M4300/M4250 docs put on 8443 (this client's default `port`). If
+        # AVUI login fails on the configured port, `_try_avui_login` retries
+        # once against 443 using this second client, and every subsequent
+        # AVUI request is sent over whichever client actually authenticated.
+        self._avui_http: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "NetgearClient":
         await self.login()
@@ -114,10 +124,12 @@ class NetgearClient:
                 await self.logout()
         finally:
             await self._http.aclose()
+            if self._avui_http is not None:
+                await self._avui_http.aclose()
 
     # -- core request plumbing -------------------------------------------------
 
-    async def _request(self, method: str, path: str, **kwargs) -> dict:
+    async def _send(self, http: httpx.AsyncClient, method: str, path: str, **kwargs) -> dict:
         # base_url already carries /api/v1, but the AVUI spec is
         # inconsistent about whether an endpoint's own path repeats that
         # prefix (e.g. "/api/v1/mlag_show" vs "/device_info" - both appear
@@ -125,12 +137,7 @@ class NetgearClient:
         # straight from the spec either way without double-prefixing.
         if path.startswith("/api/v1/"):
             path = path[len("/api/v1"):]
-        headers = kwargs.pop("headers", {})
-        if self.auth_mode == "avui" and self._session_token:
-            headers["session"] = self._session_token
-        elif self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-        resp = await self._http.request(method, path, headers=headers, **kwargs)
+        resp = await http.request(method, path, **kwargs)
         if resp.status_code >= 400:
             raise NetgearAPIError(f"{method} {path} -> HTTP {resp.status_code}: {resp.text[:300]}")
         try:
@@ -139,6 +146,15 @@ class NetgearClient:
             raise NetgearAPIError(f"{method} {path} returned non-JSON response") from exc
         logger.debug("RAW %s %s -> %s", method, path, _redact(data))
         return data
+
+    async def _request(self, method: str, path: str, **kwargs) -> dict:
+        headers = kwargs.pop("headers", {})
+        if self.auth_mode == "avui" and self._session_token:
+            headers["session"] = self._session_token
+        elif self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        http = self._avui_http if (self.auth_mode == "avui" and self._avui_http is not None) else self._http
+        return await self._send(http, method, path, headers=headers, **kwargs)
 
     async def login(self) -> None:
         if await self._try_avui_login():
@@ -150,22 +166,40 @@ class NetgearClient:
     async def _try_avui_login(self) -> bool:
         """AVUI login - returns False (rather than raising) on anything that
         looks like "this switch doesn't speak this API", so the caller can
-        fall back to ConfigAgent. Connection-level failures (unreachable
-        host, TLS errors) are left to propagate - retrying with a different
-        login body won't fix those."""
-        try:
-            data = await self._request(
-                "POST", "/login", json={"user": {"name": self._username, "password": self._password}}
+        fall back to ConfigAgent. Tries the switch's configured port first,
+        then falls back to 443 (AVUI's likely real home - see __init__)
+        before giving up. Per-port connection failures (refused, timeout)
+        are treated the same as "not this API" so the 443 fallback still
+        gets a chance even if the configured port refuses outright."""
+        ports = [self.port] if self.port == 443 else [self.port, 443]
+        for port in ports:
+            http = self._http if port == self.port else httpx.AsyncClient(
+                base_url=f"https://{self.host}:{port}/api/v1",
+                verify=self._verify_tls,
+                timeout=self._timeout,
             )
-        except NetgearAPIError:
-            return False
-        if not _resp_ok(data):
-            return False
-        session = (data.get("user") or {}).get("session")
-        if not session:
-            return False
-        self._session_token = session
-        return True
+            try:
+                data = await self._send(
+                    http, "POST", "/login",
+                    json={"user": {"name": self._username, "password": self._password}},
+                )
+            except (NetgearAPIError, httpx.TransportError):
+                if http is not self._http:
+                    await http.aclose()
+                continue
+            if not _resp_ok(data):
+                if http is not self._http:
+                    await http.aclose()
+                continue
+            session = (data.get("user") or {}).get("session")
+            if not session:
+                if http is not self._http:
+                    await http.aclose()
+                continue
+            self._session_token = session
+            self._avui_http = http if http is not self._http else None
+            return True
+        return False
 
     async def _configagent_login(self) -> None:
         body = {"login": {"username": self._username, "password": self._password}}

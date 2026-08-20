@@ -23,10 +23,17 @@ LLDP endpoint that returns the neighbor's hostname and management IP
 directly. `NetgearClient.login()` tries the AVUI session-token login
 first and falls back to the original ConfigAgent bearer-token login if
 that fails, so this works against switches that only speak one or the
-other without any configuration. Test Connection reports which one a
-given switch used (`auth_mode`); AVUI-only modules (MLAG) raise a clear
-"not available on this switch" error instead of a confusing failure when
-a switch only speaks ConfigAgent.
+other without any configuration. AVUI's spec declares `scheme: https`
+with no port, which defaults to 443 (the switch's normal web-GUI port) —
+a different port than ConfigAgent's dedicated REST API, which normally
+sits on 8443 (this app's default per-switch port). So the AVUI login
+attempt is tried on the switch's configured port first, then retried
+once against 443 before falling back to ConfigAgent, meaning a switch
+you've entered with port 8443 in the inventory can still be found
+speaking AVUI on 443 without you having to add it twice. Test Connection
+reports which one a given switch used (`auth_mode`); AVUI-only modules
+(MLAG) raise a clear "not available on this switch" error instead of a
+confusing failure when a switch only speaks ConfigAgent.
 
 ## What it does
 
