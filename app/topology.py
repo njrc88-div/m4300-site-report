@@ -45,16 +45,21 @@ Each LAG gets its own color from a fixed palette (cycled in a stable
 order) so it can be traced by eye through a diagram where several LAGs
 cross paths - a single shared color for every LAG made that impossible.
 A LAG is drawn as N genuinely parallel straight lines, one per physical
-member (real member ports from LAG config, not just a count), each with
-its own interface-number label sitting right beside it - rather than a
-single bowed pair with one combined "1,4" label stranded at the line's
-midpoint, which can't tell you which number belongs to which physical
-cable once it's nowhere near either switch. Where a line attaches to a box
-is spread evenly along that box's
-edge - ordered by the other end's vertical position - instead of every
-line pinching to the exact same center point regardless of how many
-lines share that box; same rule for every switch, so the fan-out pattern
-reads consistently across the whole diagram.
+member (real member ports from LAG config, not just a count), labeled
+once per end with all that end's members together (e.g. "1,4") - a real
+site with every uplink LAG'd, not just the core-core link, can easily
+have 8-10 LAGs on one diagram; a label per individual physical member
+(double that) buries it in small text, so members share one label per
+end instead. Labels sit a fixed pixel distance from the box they belong
+to, not a percentage of the line's length - a percentage-based offset
+put a label farther from its switch the longer/more diagonal the line
+was, scattering labels into the busy crossing area in the middle of the
+diagram rather than next to the switch they describe. Where a line
+attaches to a box is spread evenly along that box's edge - ordered by
+the other end's vertical position - instead of every line pinching to
+the exact same center point regardless of how many lines share that box;
+same rule for every switch, so the fan-out pattern reads consistently
+across the whole diagram.
 """
 from __future__ import annotations
 
@@ -543,8 +548,17 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     # attach near the same point - can be nudged apart from each other.
     pending_labels: list[tuple[float, float, float, str, str, bool]] = []  # (x, y, w, label, color, bold)
 
-    def _label_point(x1, y1, x2, y2, t):
-        return x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
+    def _label_point(x1, y1, x2, y2, dist):
+        """Point `dist` pixels from (x1,y1) toward (x2,y2) - a FIXED pixel
+        offset, not a fraction of the line's length. A percentage-based
+        offset put labels farther from the switch the longer/more diagonal
+        the line was, scattering them into the busy crossing area in the
+        middle of the diagram instead of sitting next to the box they
+        belong to."""
+        dx, dy = x2 - x1, y2 - y1
+        length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
+        t = min(dist / length, 0.45)
+        return x1 + dx * t, y1 + dy * t
 
     for key, edge in edges.items():
         # Must match _build_edges' `sorted(key)` convention exactly - this
@@ -571,9 +585,24 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             else:
                 x1, y1 = ax + aw / 2, ay
                 x2, y2 = bx + bw / 2, by + bh
-        else:
+        elif ax <= bx:
+            # a's box sits left of b's box: connect a's right edge to b's
+            # left edge - the two facing sides.
             x1, y1 = ax + aw, _anchor_y(a, key, ay, ah)
             x2, y2 = bx, _anchor_y(b, key, by, bh)
+        else:
+            # a's box sits right of b's box (the common case: "a" is
+            # whichever name sorts first alphabetically, which has nothing
+            # to do with layout position - a core commonly sorts before an
+            # edge by name but sits to its right on screen). Using the
+            # previous branch's edges here would anchor to each box's FAR
+            # side instead of the side actually facing the other switch,
+            # placing the line's endpoint - and so its label - inside the
+            # other box's own footprint, silently hidden under it (boxes
+            # are drawn after lines/labels). Use each box's facing edge
+            # instead, matching actual screen geometry.
+            x1, y1 = ax, _anchor_y(a, key, ay, ah)
+            x2, y2 = bx + bw, _anchor_y(b, key, by, bh)
 
         count = _link_count(edge)
         is_lag = count > 1
@@ -586,25 +615,30 @@ def build_switch_topology(switches: list[dict]) -> str | None:
             )
             a_txt = (edge["a_ports"] or ["?"])[0]
             b_txt = (edge["b_ports"] or ["?"])[0]
-            ax_pt = _label_point(x1, y1, x2, y2, 0.14)
-            bx_pt = _label_point(x1, y1, x2, y2, 0.86)
+            ax_pt = _label_point(x1, y1, x2, y2, 16)
+            bx_pt = _label_point(x2, y2, x1, y1, 16)
             pending_labels.append((ax_pt[0], ax_pt[1], 22 + len(a_txt) * 4.3, a_txt, color, False))
             pending_labels.append((bx_pt[0], bx_pt[1], 22 + len(b_txt) * 4.3, b_txt, color, False))
             continue
 
         # A LAG is drawn as N genuinely parallel straight lines (one per
-        # physical member, evenly offset perpendicular to the link) rather
-        # than a single bowed pair - matches how members are actually
-        # labeled: each line gets its own interface number, positioned
-        # right beside it, instead of one combined "1,4" label that can't
-        # tell you which number belongs to which physical cable.
+        # physical member, evenly offset perpendicular to the link) so it
+        # reads as an aggregated bundle rather than one cable - but labeled
+        # once per end (both members together, e.g. "1,4"), not once per
+        # individual line. Labeling every physical member separately (4
+        # labels per LAG instead of 2) reads fine with one or two LAGs on
+        # the page; with the ~8-10 a real dual-core, all-uplinks-LAG'd site
+        # produces, it buries the diagram in small text. Two per end still
+        # tells you exactly which ports are members - just not which
+        # specific line is which within the pair, a distinction that
+        # rarely matters and isn't worth doubling the visual noise for.
         a_members = sorted(edge.get("a_lag_members") or edge["a_ports"], key=_port_sort_key)
         b_members = sorted(edge.get("b_lag_members") or edge["b_ports"], key=_port_sort_key)
         n = max(len(a_members), len(b_members), 1)
         dx, dy = x2 - x1, y2 - y1
         length = max((dx ** 2 + dy ** 2) ** 0.5, 1)
         px, py = -dy / length, dx / length
-        spacing = 5.0
+        spacing = 4.0
         for i in range(n):
             off = (i - (n - 1) / 2) * spacing
             lx1, ly1 = x1 + px * off, y1 + py * off
@@ -613,12 +647,13 @@ def build_switch_topology(switches: list[dict]) -> str | None:
                 f'<line x1="{lx1:.1f}" y1="{ly1:.1f}" x2="{lx2:.1f}" y2="{ly2:.1f}" '
                 f'stroke="{color}" stroke-width="1.6"/>'
             )
-            a_txt = a_members[i] if i < len(a_members) else "?"
-            b_txt = b_members[i] if i < len(b_members) else "?"
-            ax_pt = _label_point(lx1, ly1, lx2, ly2, 0.14)
-            bx_pt = _label_point(lx1, ly1, lx2, ly2, 0.86)
-            pending_labels.append((ax_pt[0], ax_pt[1], 16 + len(a_txt) * 4.3, a_txt, color, True))
-            pending_labels.append((bx_pt[0], bx_pt[1], 16 + len(b_txt) * 4.3, b_txt, color, True))
+
+        a_label = ",".join(a_members) or "?"
+        b_label = ",".join(b_members) or "?"
+        ax_pt = _label_point(x1, y1, x2, y2, 16)
+        bx_pt = _label_point(x2, y2, x1, y1, 16)
+        pending_labels.append((ax_pt[0], ax_pt[1], 18 + len(a_label) * 4.3, a_label, color, True))
+        pending_labels.append((bx_pt[0], bx_pt[1], 18 + len(b_label) * 4.3, b_label, color, True))
 
     for x, y, label_w, label, color, bold in _resolve_label_collisions(pending_labels):
         svg_parts.append(
