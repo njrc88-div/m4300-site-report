@@ -369,7 +369,7 @@ def _switch_box(
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    stp_text = str(stp_priority) if stp_priority is not None else None
+    stp_text = f"STP Priority: {stp_priority}" if stp_priority is not None else None
 
     def _fit(text: str, char_px: float) -> str:
         chars = max(4, int((h - 16) / char_px))
