@@ -406,7 +406,33 @@ class NetgearClient:
         """SVIs - every VLAN with an IP interface configured (routed or
         not), one entry per VLAN, straight from the switch - not looped
         per-VLAN-ID like get_vlan()/get_vlan_membership() above, since
-        this endpoint already returns the full set in one call."""
+        this endpoint already returns the full set in one call.
+
+        `/vlan_ip` is only documented in the ConfigAgent spec, not AVUI -
+        tries ConfigAgent explicitly first rather than going through the
+        usual AVUI-first _request() order, since that order only falls
+        back to the other session on a 404 ("this path doesn't exist
+        here"). If AVUI happens to expose something at the same path that
+        errors a different way (500, etc.), that fallback rule would
+        treat it as a real, final answer and never even try ConfigAgent -
+        where this data is actually documented to live. On failure here,
+        AVUI is still tried as a genuine fallback (not just on 404), but
+        the ConfigAgent error is what gets raised if both fail, since
+        that's the documented source and the more informative answer."""
+        configagent_headers = self._auth_headers_for("configagent")
+        if configagent_headers is not None:
+            try:
+                data = await self._send(self._http, "GET", "/vlan_ip", headers=configagent_headers)
+                return _as_list(_unwrap(data, "vlan_ip", "vlanIp"))
+            except NetgearAPIError as exc:
+                avui_headers = self._auth_headers_for("avui")
+                if avui_headers is None:
+                    raise
+                try:
+                    data = await self._send(self._http_for("avui"), "GET", "/vlan_ip", headers=avui_headers)
+                    return _as_list(_unwrap(data, "vlan_ip", "vlanIp"))
+                except NetgearAPIError:
+                    raise exc from None
         data = await self._request("GET", "/vlan_ip")
         return _as_list(_unwrap(data, "vlan_ip", "vlanIp"))
 
