@@ -89,30 +89,32 @@ switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
 toward the access layer sits further left, and the legend is ordered to
 match (access/other switches first, core switches second). Boxes are
-narrow and tall rather than wide and short, with the hostname as a bold
-heading and (root/core switches only get STP priority; every box gets
-model) smaller, lighter sub-headings below it - all rotated 90 degrees to
-read top-to-bottom, the same convention every other label on the diagram
-uses, and the whole group tightly packed and centered in the box.
+narrow and tall rather than wide and short, with hostname / model /
+(root switches only) STP priority as three separate *columns* side by
+side across the box's width, each rotated 90 degrees to read top-to-
+bottom - rather than stacked one above the next along the box's height,
+which is how every earlier attempt here did it.
 
-The hostname's own space is reserved first, sized to its full text - it
-must never truncate before its distinguishing suffix (e.g. "Edge-NE-88-11"
-vs "-12") - and only what's left is split between the sub-headings, which
-*can* tolerate truncation: STP priority (0-65535, at most 5 digits) gets
-only the small reservation its own actual digit count needs, and model -
-which varies a lot in length and can't always fit anyway - gets whatever
-of the remaining space that leaves, rather than splitting the leftover
-space by a fixed proportion and leaving both a few characters short of
-meaning anything. That's a deliberate departure from treating every line
-as equally space-constrained - three earlier rounds (side-by-side
-columns, proportional bands sized off the box's full height, then a
+That distinction matters because of how rotated text is actually read:
+nobody tilts their head to skim rotated-in-place rows on a printed page,
+they turn the page (or the diagram) itself - so turning a top-to-bottom
+stack of rows 90 degrees produces left-to-right *columns*, not another
+top-to-bottom stack. Hostname sits in the rightmost column, model to its
+left, and STP priority to the left of that, so that turning the page the
+way the rotation is meant to be read puts hostname on top, model
+underneath it, and STP underneath model. Columns are independent of each
+other, so each one gets the box's *full* height for its own text rather
+than a fraction of it split between hostname and its sub-headings -
+several earlier rounds (side-by-side columns tried without this reasoning
+behind them, proportional bands sized off the box's full height, then a
 tightly packed block still budgeted by those same proportional weights)
-all made the hostname compete for space with its own sub-headings instead
-of getting what it actually needs first. Box height is sized dynamically
-against a page-height budget (shrinking as more switches share a tier,
-growing when there are few), and the whole diagram is rendered at that
-exact pixel size — not auto-scaled — so it fills the page instead of
-sitting at whatever size its content naturally needs.
+all had hostname and sub-headings competing for a shared vertical budget,
+which either left the hostname's own space tight or truncated model/STP
+down to meaningless fragments. Box height is sized dynamically against a
+page-height budget (shrinking as more switches share a tier, growing when
+there are few), and the whole diagram is rendered at that exact pixel
+size — not auto-scaled — so it fills the page instead of sitting at
+whatever size its content naturally needs.
 
 Root selection: real MLAG status (domain ID + system MAC, from the AVUI
 API) is authoritative when available — two switches reporting the same

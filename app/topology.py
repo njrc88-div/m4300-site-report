@@ -347,68 +347,54 @@ def _switch_box(
     x: float, y: float, w: float, h: float, name: str, is_root: bool,
     model: str = "", stp_priority: int | None = None,
 ) -> str:
-    """A narrow, tall box with the hostname as a bold heading and model /
-    (root switches only) STP priority as smaller sub-headings below it -
-    all rotated 90 degrees to read top-to-bottom, and the whole group
-    tightly packed and centered in the box.
+    """A narrow, tall box with hostname / model / (root switches only) STP
+    priority as three separate columns side by side across the box's
+    width, each rotated 90 degrees to read top-to-bottom - rather than
+    stacked one above the next along the box's height.
 
-    The hostname's own space is reserved first, sized to its full text -
-    it must never truncate before its distinguishing suffix (e.g.
-    "Edge-NE-88-11" vs "-12") - and only what's left is split between the
-    sub-headings, which *can* tolerate truncation (model is shown in full
-    in that switch's own report section anyway; this is just a hint).
-    That's a deliberate change from treating all lines as equally
-    space-constrained - three failed rounds (side-by-side columns,
-    proportional bands sized off the box's full height, then a tightly
-    packed block still budgeted by the same proportional weights) all
-    made the hostname compete for space with its own sub-headings."""
+    That distinction matters because of how rotated text is actually read:
+    nobody tilts their head to skim rotated-in-place rows on a printed
+    page, they turn the page (or the diagram) itself. In this diagram's
+    orientation that means hostname sits in the *rightmost* column, model
+    to its left, and STP priority to the left of that - so that turning
+    the page 90 degrees the way the rotation is meant to be read puts
+    hostname on top, model underneath it, and STP underneath model, left
+    to right in box-space becoming top to bottom once actually read.
+
+    Columns are independent of each other, so - unlike an earlier shared-
+    budget version - each one gets the box's *full* height for its own
+    text rather than a fraction of it split between hostname and its
+    sub-headings."""
     fill = NAVY if is_root else GRAY_FILL
     text_fill = WHITE if is_root else NAVY
     sub_fill = "#B9C3DC" if is_root else GRAY_TEXT
     border = TEAL if is_root else GRAY_BORDER
-    cx = x + w / 2
     stp_text = str(stp_priority) if stp_priority is not None else None
 
-    host_chars = max(4, int((h - 16) / 6.3))
-    host_str = _truncate(name, host_chars)
-    host_extent = max(14.0, len(host_str) * 6.3 + 8)
+    def _fit(text: str, char_px: float) -> str:
+        chars = max(4, int((h - 16) / char_px))
+        return _truncate(text, chars)
 
-    line_gap = 8.0
-    sub_count = (1 if model else 0) + (1 if stp_text else 0)
-    sub_budget = max(0.0, h - host_extent - line_gap * sub_count)
-    # STP priority is a bare number (0-65535, at most 5 digits) - it gets
-    # only the (small) reservation its own actual digit count needs, not a
-    # flat worst-case allowance, so model - which varies a lot in length
-    # and can't always fit anyway - gets everything else instead of both
-    # ending up a few characters short of actually meaning anything.
-    stp_reserve = min(sub_budget, len(stp_text) * 5.2 + 8) if stp_text else 0.0
-    model_budget = sub_budget - stp_reserve
-
-    lines = [(host_str, 11, "700", text_fill, host_extent)]
-    if model:
-        chars = max(4, int((model_budget - 8) / 5.2))
-        text = _truncate(model, chars)
-        lines.append((text, 7.5, "400", sub_fill, max(12.0, len(text) * 5.2 + 8)))
+    lines = []
     if stp_text:
-        chars = max(5, int((stp_reserve - 8) / 5.2))
-        text = _truncate(stp_text, chars)
-        lines.append((text, 7.5, "400", sub_fill, max(12.0, len(text) * 5.2 + 8)))
+        lines.append((_fit(stp_text, 5.2), 7.5, "400", sub_fill))
+    if model:
+        lines.append((_fit(model, 5.2), 7.5, "400", sub_fill))
+    lines.append((_fit(name, 6.3), 11, "700", text_fill))
 
-    block_h = sum(l[4] for l in lines) + line_gap * (len(lines) - 1)
-    cursor = y + (h - block_h) / 2
-
+    col_w = w / len(lines)
+    cy = y + h / 2
     parts = [
         f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" '
         f'fill="{fill}" stroke="{border}" stroke-width="{2 if is_root else 1}"/>',
     ]
-    for text, font_size, weight, fill_color, extent in lines:
-        cy = cursor + extent / 2
+    for i, (text, font_size, weight, fill_color) in enumerate(lines):
+        col_cx = x + col_w * (i + 0.5)
         parts.append(
-            f'<text x="{cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {cy:.1f})" '
+            f'<text x="{col_cx:.1f}" y="{cy:.1f}" text-anchor="middle" transform="rotate(90 {col_cx:.1f} {cy:.1f})" '
             f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="{font_size}" font-weight="{weight}" '
             f'fill="{fill_color}">{escape(text)}</text>'
         )
-        cursor += extent + line_gap
     return "".join(parts)
 
 
