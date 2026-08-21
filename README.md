@@ -198,6 +198,7 @@ a glance which core actually won root election.
 | Link Aggregation Groups | `/sw_lag_cfg?lag_group=ALL` |
 | MLAG Status | `/mlag_show` — AVUI only, off by default |
 | VLANs & Port Membership | `/swcfg_vlan`, `/swcfg_vlan_membership` (VLAN IDs discovered from port data) |
+| SVI / VLAN Routing Interfaces | `/vlan_ip` (off by default) |
 | Spanning Tree Protocol | `/stp`, `/dot1s_interfaces` |
 | LLDP Neighbors | `/neighbor` on AVUI (hostname + management IP), `/lldp_remote_devices` on ConfigAgent |
 | Fiber / SFP Diagnostics | `/fiber_optics` |

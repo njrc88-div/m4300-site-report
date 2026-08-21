@@ -418,6 +418,23 @@
       </div>
       {% else %}<div class="empty-note">No VLANs discovered.</div>{% endfor %}
 
+    {% elif module.id == 'svi' %}
+      {% if data.interfaces %}
+      <table class="data">
+        <tr><th>VLAN</th><th>IP Address</th><th>Subnet Mask</th><th>MTU</th><th>Routing</th><th>DHCP</th></tr>
+        {% for i in data.interfaces %}
+        <tr>
+          <td>{{ i.vlanId if i.vlanId is not none else '-' }}</td>
+          <td>{{ i.ipAddr or '-' }}</td>
+          <td>{{ i.ipMask or '-' }}</td>
+          <td>{{ i.ipMtu if i.ipMtu is not none else '-' }}</td>
+          <td>{{ 'Enabled' if i.vlanRouting else 'Disabled' }}</td>
+          <td>{{ 'Yes' if i.dhcpStatus else 'No' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="empty-note">No VLAN IP interfaces configured.</div>{% endif %}
+
     {% elif module.id == 'stp' %}
       <table class="kv">
         <tr><td class="k">Status</td><td>{{ data.global.status_text }}</td></tr>

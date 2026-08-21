@@ -274,6 +274,10 @@ async def _vlans(client: NetgearClient) -> dict:
     return {"vlans": vlans}
 
 
+async def _svi(client: NetgearClient) -> dict:
+    return {"interfaces": await client.get_vlan_ip_interfaces()}
+
+
 def stp_priority_from(global_stp: dict) -> int | None:
     """Best-effort read of the root bridge priority out of a switch's STP
     global data, for the topology diagram to show next to the core
@@ -402,6 +406,10 @@ MODULES: list[Module] = [
     Module("vlans", "VLANs & Port Membership", "VLANs",
            "VLANs in use (discovered from port data) with tagged/untagged port membership.",
            True, _vlans),
+    Module("svi", "SVI / VLAN Routing Interfaces", "VLANs",
+           "Every VLAN with an IP interface configured - address, mask, MTU, DHCP, and "
+           "whether routing is enabled for it.",
+           False, _svi),
     Module("stp", "Spanning Tree Protocol", "Ports",
            "Global STP/RSTP/MSTP state plus per-interface guard/edge settings.",
            True, _stp),

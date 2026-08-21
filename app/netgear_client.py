@@ -402,6 +402,14 @@ class NetgearClient:
         data = await self._request("GET", "/swcfg_vlan_membership", params={"vlanid": vlanid})
         return _unwrap(data, "vlanMembership", "vlan_membership")
 
+    async def get_vlan_ip_interfaces(self) -> list[dict]:
+        """SVIs - every VLAN with an IP interface configured (routed or
+        not), one entry per VLAN, straight from the switch - not looped
+        per-VLAN-ID like get_vlan()/get_vlan_membership() above, since
+        this endpoint already returns the full set in one call."""
+        data = await self._request("GET", "/vlan_ip")
+        return _as_list(_unwrap(data, "vlan_ip", "vlanIp"))
+
     # -- Spanning Tree -----------------------------------------------------
 
     async def get_stp(self) -> dict:
