@@ -105,17 +105,23 @@ TOP_Y = 20
 
 # Page content-box budget (A4 portrait, matches the rest of the report's
 # unit-per-px scale). The diagram is sized to fill this, not just to fit
-# whatever its content naturally needs. Sized to leave room, on the same
-# page, for the heading/subtitle above it and the small standalone legend
-# svg below it (see _legend_svg) - an earlier version drew the legend
-# inside this SVG's own canvas, in a column reserved on the left, but a
-# full-height column pushed the actual diagram content visibly off-center
-# and shrank it to make room; a small legend that only needs a compact
-# corner, not a whole extra column, doesn't have that problem living
-# outside the canvas as its own element - it just needs *some* room
-# reserved below the diagram, which is what shrinking TARGET_H here does.
+# whatever its content naturally needs.
+#
+# The legend (report.html's plain HTML/CSS `.legend` block, below the
+# diagram) is horizontal text, not rotated to match the diagram's own
+# rotated box labels - that was tried, twice, and both versions ran into
+# the same hard wall: a full caption sentence rotated at a legible size
+# needs far more vertical room (60-90+px per short label, 250px+ for one
+# full sentence) than fits below a *full-size* diagram on a single A4
+# page - there just isn't a TARGET_H value that leaves enough room for
+# both a full-size diagram and a rotated multi-line legend on the same
+# page, only a choice of which one to shrink to make room for the other.
+# Horizontal text needs one line's worth of height regardless of how long
+# the sentence is, so TARGET_H barely has to give up anything to leave
+# room for it - which is what actually lets the diagram stay full-size
+# *and* the legend keep its full caption text, both on the same page.
 TARGET_W = 660.0
-TARGET_H = 645.0
+TARGET_H = 700.0
 
 
 def _norm_mac(mac: str | None) -> str:
@@ -479,80 +485,6 @@ def _push_clear_of_box(
     return opt1 if dist_to_box(*opt1) >= dist_to_box(*opt2) else opt2
 
 
-def _legend_svg() -> str:
-    """A small, standalone SVG - not part of the main diagram's own canvas
-    and not sized against its height - meant to sit in normal HTML block
-    flow directly under the diagram, left-aligned rather than centered
-    (see report.html: the main diagram's svg gets `margin: 0 auto`, this
-    one doesn't). Two earlier attempts got either the orientation or the
-    footprint wrong: CSS `writing-mode: vertical-rl` collapsed each
-    rotated label's reserved layout box to near-zero width, overlapping
-    every item; drawing it inside the main diagram's own canvas in a
-    column read correctly but reserved a column running the diagram's
-    *full* height for three short labels, visibly shrinking and
-    off-centering the actual diagram to make room for what was mostly
-    empty space in that column. This version's own height is sized only
-    to its own content, not constrained by the diagram's - each row is
-    individually rotated 90 degrees the same as the box text beside it
-    and stacked tightly, given exactly the vertical room its own rotated
-    length needs rather than a fixed small slot sized for the swatch.
-    No caption: a full explanatory sentence, rotated at a legible size,
-    needs more vertical room than fits next to a full-height diagram on
-    one page - the diagram itself already shows a number beside every
-    line and each LAG in its own colour, so the three item labels carry
-    the legend's actual job without it."""
-    items = [
-        (GRAY_FILL, GRAY_BORDER, "Edge Switches"),
-        (NAVY, None, "Core Switches"),
-        (None, None, "LAG"),
-    ]
-    swatch_w = 8.0
-    char_px = 4.6
-    row_gap = 6.0
-    cx = swatch_w + 12
-    cursor = 4.0
-    parts: list[str] = []
-
-    for fill, border, text in items:
-        # Each label's own rotated length - not the swatch's small size -
-        # is what actually needs reserving here, the same lesson learned
-        # sizing the switch boxes: a fixed small slot per row is only
-        # right for the swatch, and a rotated label of any real length
-        # overlaps its neighbors the instant it needs more room than that.
-        label_extent = 8 + len(text) * char_px
-        row_h = max(swatch_w, label_extent)
-        sy = cursor + (row_h - swatch_w) / 2
-        sx = 2.0
-        if text == "LAG":
-            chip_colors = LAG_PALETTE[:3]
-            chip_w = swatch_w / len(chip_colors)
-            for j, c in enumerate(chip_colors):
-                parts.append(
-                    f'<rect x="{sx + j * chip_w:.1f}" y="{sy:.1f}" width="{chip_w:.1f}" height="{swatch_w:.1f}" fill="{c}"/>'
-                )
-        else:
-            border_attr = f' stroke="{border}" stroke-width="1"' if border else ""
-            parts.append(
-                f'<rect x="{sx:.1f}" y="{sy:.1f}" width="{swatch_w:.1f}" height="{swatch_w:.1f}" rx="2" fill="{fill}"{border_attr}/>'
-            )
-        label_cy = cursor + row_h / 2
-        parts.append(
-            f'<text x="{cx:.1f}" y="{label_cy:.1f}" text-anchor="middle" '
-            f'transform="rotate(90 {cx:.1f} {label_cy:.1f})" '
-            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="6.5" font-weight="600" '
-            f'fill="{GRAY_TEXT}">{escape(text)}</text>'
-        )
-        cursor += row_h + row_gap
-
-    width = cx * 2
-    height = cursor - row_gap + 4
-    header = (
-        f'<svg width="{width:.0f}" height="{height:.0f}" viewBox="0 0 {width:.0f} {height:.0f}" '
-        'xmlns="http://www.w3.org/2000/svg" role="img"><title>Legend</title>'
-    )
-    return header + "".join(parts) + "</svg>"
-
-
 def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str,
     "neighbors": [...], "lag_groups": [...], "mlag": {...} | None,
@@ -891,4 +823,4 @@ def build_switch_topology(switches: list[dict]) -> str | None:
         )
 
     svg_parts.append("</svg>")
-    return "\n".join(svg_parts) + "\n" + _legend_svg()
+    return "\n".join(svg_parts)
