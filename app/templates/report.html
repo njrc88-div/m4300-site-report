@@ -65,6 +65,8 @@
     border-left: 4pt solid #00BFB2;
     padding-left: 0.2cm;
   }
+  .port-map-block { margin-bottom: 0.3cm; }
+  .port-map-image { display: block; max-width: 100%; border: 0.5pt solid #D9D9D6; border-radius: 3pt; }
   .error-banner {
     background: #FDECEC; border: 1pt solid #D64545; color: #7A1F1F;
     padding: 0.3cm 0.4cm; border-radius: 3pt; margin: 0.3cm 0;
@@ -169,6 +171,13 @@
     &nbsp;&middot;&nbsp; S/N {{ entry.device_info.serialNumber or "-" }}
   {% endif %}
 </div>
+
+{% if sw.port_map_image %}
+<div class="port-map-block">
+  <h3 class="section-title">Port / VLAN Map</h3>
+  <img class="port-map-image" src="{{ sw.port_map_image }}" alt="Port to VLAN map for {{ sw.name }}">
+</div>
+{% endif %}
 
 {% if entry.error %}
   <div class="error-banner"><strong>Could not connect to this switch.</strong><br>{{ entry.error }}</div>

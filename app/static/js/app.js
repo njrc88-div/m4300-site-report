@@ -21,7 +21,16 @@
 
   function saveSwitches() {
     const toSave = switches.map(({ status, statusMsg, ...rest }) => rest);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+      return true;
+    } catch (err) {
+      // Most likely quota exceeded - attached port/VLAN map images are by
+      // far the largest thing stored here, so that's the first thing
+      // worth telling the user to trim if this ever fires.
+      toast("Couldn't save - browser storage is full. Try removing a large attached image.");
+      return false;
+    }
   }
 
   function newSwitch() {
@@ -37,6 +46,7 @@
       firmware: "",
       status: "pending",
       statusMsg: "",
+      port_map_image: null,
     };
   }
 
@@ -169,7 +179,17 @@
       username: sw.username,
       password: sw.password,
       verify_tls: !!sw.verify_tls,
+      port_map_image: sw.port_map_image || null,
     };
+  }
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
   }
 
   document.getElementById("add-switch-btn").addEventListener("click", () => {
@@ -235,17 +255,63 @@
     if (selectedSwitchIds.size === 0) usable.forEach((s) => selectedSwitchIds.add(s.id));
     el.innerHTML = usable
       .map(
-        (s) => `<div class="switch-chip ${selectedSwitchIds.has(s.id) ? "selected" : ""}" data-id="${s.id}">
-          ${escapeHtml(s.name || s.host)}${s.model ? ` <span style="opacity:0.7">· ${escapeHtml(s.model)}</span>` : ""}
+        (s) => `<div class="switch-row" data-id="${s.id}">
+          <div class="switch-toggle ${selectedSwitchIds.has(s.id) ? "selected" : ""}" data-id="${s.id}">
+            ${escapeHtml(s.name || s.host)}${s.model ? ` <span style="opacity:0.7">· ${escapeHtml(s.model)}</span>` : ""}
+          </div>
+          <div class="port-map-attach">
+            ${
+              s.port_map_image
+                ? `<img class="port-map-thumb" src="${s.port_map_image}" alt="">
+                   <span>Port/VLAN map attached</span>
+                   <button type="button" class="port-map-remove" data-id="${s.id}" title="Remove image">&times;</button>`
+                : `<label style="cursor:pointer;">
+                     Attach port/VLAN map image
+                     <input type="file" accept="image/*" class="port-map-input" data-id="${s.id}" style="display:none;">
+                   </label>`
+            }
+          </div>
         </div>`
       )
       .join("");
-    el.querySelectorAll(".switch-chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const id = chip.dataset.id;
+    el.querySelectorAll(".switch-toggle").forEach((toggle) => {
+      toggle.addEventListener("click", () => {
+        const id = toggle.dataset.id;
         if (selectedSwitchIds.has(id)) selectedSwitchIds.delete(id);
         else selectedSwitchIds.add(id);
-        chip.classList.toggle("selected");
+        toggle.classList.toggle("selected");
+      });
+    });
+    el.querySelectorAll(".port-map-input").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const file = input.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+          toast("Image is larger than 2MB - pick a smaller screenshot (these are saved in your browser's local storage, which has limited space).");
+          input.value = "";
+          return;
+        }
+        const sw = switches.find((s) => s.id === input.dataset.id);
+        if (!sw) return;
+        try {
+          sw.port_map_image = await readFileAsDataURL(file);
+          if (!saveSwitches()) {
+            sw.port_map_image = null;
+            return;
+          }
+          renderSwitchPicker();
+        } catch (err) {
+          toast(`Couldn't read that image: ${err}`);
+        }
+      });
+    });
+    el.querySelectorAll(".port-map-remove").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const sw = switches.find((s) => s.id === btn.dataset.id);
+        if (!sw) return;
+        sw.port_map_image = null;
+        saveSwitches();
+        renderSwitchPicker();
       });
     });
   }

@@ -69,7 +69,15 @@ The app has three tabs:
    drops low-value per-interface detail that's mostly defaults on a typical
    switch (currently: the STP per-interface Guard Mode/Edge Port/BPDU
    table) — off by default, so a fully detailed report is always still one
-   click away.
+   click away. Each switch in the "Switches to Include" list can also have
+   a **port/VLAN map image** attached (e.g. a screenshot from whatever tool
+   documents the site's port-to-VLAN assignments) - it's embedded as-is in
+   that switch's own report section, under a "Port / VLAN Map" heading, not
+   fetched or generated from live switch data. Attached images are read
+   client-side into a data: URL and kept in the same browser localStorage
+   entry as that switch's other saved fields (2MB cap per image - browser
+   storage quotas are limited, and this is by far the largest thing stored
+   there).
 
 Report content is cleaned up automatically regardless of the abridged
 toggle: down ports with no description and no LLDP neighbor (i.e.

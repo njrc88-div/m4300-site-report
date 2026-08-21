@@ -10,6 +10,10 @@ class SwitchCredential(BaseModel):
     username: str
     password: str
     verify_tls: bool = False
+    port_map_image: str | None = Field(
+        None, description="Optional data: URL of a user-attached port/VLAN map image for this "
+        "switch, embedded in its report section as-is - not fetched from the switch."
+    )
 
 
 class TestConnectionRequest(BaseModel):
