@@ -40,8 +40,7 @@
   .cover .logo { position: absolute; top: 2.2cm; left: 1.8cm; width: 6.2cm; }
   .cover .title-block { position: absolute; top: 12cm; left: 1.8cm; right: 1.8cm; }
   .cover .kicker { font-size: 11pt; letter-spacing: 0.12em; text-transform: uppercase; color: #71DBD4; margin-bottom: 0.4cm; }
-  .cover h1 { font-size: 30pt; margin: 0 0 0.3cm 0; font-weight: 700; }
-  .cover .subtitle { font-size: 14pt; color: #D9D9D6; margin-bottom: 1.2cm; }
+  .cover h1 { font-size: 30pt; margin: 0 0 1.2cm 0; font-weight: 700; }
   .cover .meta-table { font-size: 10.5pt; border-collapse: collapse; }
   .cover .meta-table td { padding: 0.15cm 0.6cm 0.15cm 0; vertical-align: top; }
   .cover .meta-table td.k { color: #71DBD4; text-transform: uppercase; font-size: 8pt; letter-spacing: 0.08em; }
@@ -121,7 +120,6 @@
   <div class="title-block">
     <div class="kicker">Network Infrastructure Site Report</div>
     <h1>{{ site_name }}</h1>
-    <div class="subtitle">NETGEAR M4300 Switch Configuration &amp; Status</div>
     <table class="meta-table">
       {% if client_name %}<tr><td class="k">Client</td><td>{{ client_name }}</td></tr>{% endif %}
       <tr><td class="k">Report Date</td><td>{{ report_date }}</td></tr>
