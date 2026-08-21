@@ -31,11 +31,10 @@ right edge, each hop toward the access layer sits further left. Internally
 the tree is built left-to-right (the natural direction for BFS-from-root)
 and then mirrored horizontally as a final step - simplest way to keep the
 hierarchy/layout math untouched while flipping which edge the root lands
-on. The legend runs down its own reserved column on the diagram's left
-edge (see LEGEND_W / _legend_parts), sharing the diagram's own rotated
-text convention rather than living below it as a separate element that
-would have to be read in a completely different orientation from
-everything beside it.
+on. The legend is a small HTML/CSS block below the diagram (see
+report.html), not part of this SVG - it's compact enough that giving it
+a full reserved column here just shrank and off-centered the actual
+diagram to make room for a column mostly empty space.
 
 Boxes are narrow and tall rather than wide and short, with their labels
 rotated to read top-to-bottom - this is what lets the diagram use the
@@ -107,16 +106,14 @@ TOP_Y = 20
 # Page content-box budget (A4 portrait, matches the rest of the report's
 # unit-per-px scale). The diagram is sized to fill this, not just to fit
 # whatever its content naturally needs. Sized to leave room, on the same
-# page, for the heading/subtitle above it (the legend lives inside the
-# diagram's own canvas now, in a reserved left column - see LEGEND_W -
-# rather than needing its own separate vertical budget below). TARGET_W
-# is the tier-layout budget *before* LEGEND_W is added on top of it - it's
-# smaller than the page's full content width specifically to leave that
-# room, since going over the page's actual content width would trigger
-# CSS `max-width: 100%` to scale the whole canvas down proportionally,
-# quietly shrinking the box heights this file just spent so much effort
-# getting right along with it.
-TARGET_W = 550.0
+# page, for the heading/subtitle above it and the (small, HTML/CSS) legend
+# below it - see report.html's `.legend` block. An earlier version drew
+# the legend inside this SVG's own canvas, in a column reserved on the
+# left, but a full-height column pushed the actual diagram content
+# visibly off-center and shrank it to make room - a small legend that
+# only needs a compact corner, not a whole extra column, doesn't have
+# that problem living outside the canvas in ordinary HTML flow.
+TARGET_W = 660.0
 TARGET_H = 685.0
 
 
@@ -481,78 +478,6 @@ def _push_clear_of_box(
     return opt1 if dist_to_box(*opt1) >= dist_to_box(*opt2) else opt2
 
 
-LEGEND_W = 110.0
-
-
-def _legend_parts(x: float, y: float, w: float, h: float) -> list[str]:
-    """Draws the legend as its own vertical column, reserved on the left
-    edge of the main diagram's canvas (see LEGEND_W) - not a separate
-    element stacked below it. Sharing the main canvas's own coordinate
-    system means it can use the exact same rotate(90 cx cy) text technique
-    as every label in the diagram beside it, so it genuinely reads
-    top-to-bottom the same way the boxes do, and its position is governed
-    by the same drawing pass instead of a second element subject to its
-    own page-fit budget (CSS `writing-mode: vertical-rl` was tried first
-    for a stacked-below version, but WeasyPrint collapsed the rotated
-    label boxes to near-zero width instead of reserving their vertical
-    footprint, overlapping every item)."""
-    items = [
-        (GRAY_FILL, GRAY_BORDER, "other switches"),
-        (NAVY, None, "core switch(es)"),
-        (None, None, "LAG"),
-    ]
-    caption = "Each LAG has its own colour; numbers are labeled at each end."
-    cx = x + w / 2
-    swatch_w = 9.0
-    char_px = 5.6
-    parts: list[str] = []
-    cursor = y + 20
-
-    for fill, border, text in items:
-        sy = cursor
-        sx = cx - swatch_w / 2
-        if text == "LAG":
-            chip_colors = LAG_PALETTE[:3]
-            chip_w = swatch_w / len(chip_colors)
-            for j, c in enumerate(chip_colors):
-                parts.append(
-                    f'<rect x="{sx + j * chip_w:.1f}" y="{sy:.1f}" width="{chip_w:.1f}" height="{swatch_w:.1f}" fill="{c}"/>'
-                )
-        else:
-            border_attr = f' stroke="{border}" stroke-width="1"' if border else ""
-            parts.append(
-                f'<rect x="{sx:.1f}" y="{sy:.1f}" width="{swatch_w:.1f}" height="{swatch_w:.1f}" rx="2" fill="{fill}"{border_attr}/>'
-            )
-        label_extent = 8 + len(text) * char_px
-        label_cy = sy + swatch_w + 10 + label_extent / 2
-        parts.append(
-            f'<text x="{cx:.1f}" y="{label_cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {label_cy:.1f})" '
-            f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="8" font-weight="600" '
-            f'fill="{GRAY_TEXT}">{escape(text)}</text>'
-        )
-        cursor = label_cy + label_extent / 2 + 26
-
-    # Truncate to whatever the remaining column height actually has room
-    # for, rather than assuming the full caption always fits - a short
-    # component/unlinked-only canvas can leave far less room here than the
-    # full sentence needs, and an SVG element clips its own content at its
-    # own height, so an overflowing caption doesn't spill onto the page
-    # around it, it just gets silently cut off mid-word.
-    remaining = (y + h) - cursor
-    caption_chars = max(4, int((remaining - 8) / 4.4))
-    caption = _truncate(caption, caption_chars)
-    caption_extent = 8 + len(caption) * 4.4
-    if remaining > caption_extent:
-        cursor += (remaining - caption_extent) / 2
-    caption_cy = cursor + caption_extent / 2
-    parts.append(
-        f'<text x="{cx:.1f}" y="{caption_cy:.1f}" text-anchor="middle" transform="rotate(90 {cx:.1f} {caption_cy:.1f})" '
-        f'font-family="\'Liberation Sans\', Arial, sans-serif" font-size="7" font-style="italic" '
-        f'fill="#888B8D">{escape(caption)}</text>'
-    )
-    return parts
-
-
 def build_switch_topology(switches: list[dict]) -> str | None:
     """switches: [{"name": str, "mac": str|None, "model": str,
     "neighbors": [...], "lag_groups": [...], "mlag": {...} | None,
@@ -651,20 +576,12 @@ def build_switch_topology(switches: list[dict]) -> str | None:
     # already-computed position achieves the same result.
     positions = {name: (canvas_w - x - w, y, w, h) for name, (x, y, w, h) in positions.items()}
 
-    # The legend lives in its own reserved column on the left edge of this
-    # same canvas - not as a separate element stacked below the diagram -
-    # so shift every box (and everything derived from `positions` below:
-    # lines, anchor points, labels) right by that column's width.
-    positions = {name: (x + LEGEND_W, y, w, h) for name, (x, y, w, h) in positions.items()}
-    canvas_w += LEGEND_W
-
     svg_parts = [
         f'<svg width="{canvas_w:.0f}" height="{canvas_h:.0f}" viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         'xmlns="http://www.w3.org/2000/svg" role="img">',
         "<title>Switch topology</title>",
         "<desc>Switch-to-switch links discovered via LLDP.</desc>",
     ]
-    svg_parts.extend(_legend_parts(0.0, 0.0, LEGEND_W, canvas_h))
 
     # Where a line attaches to a box: every *individual physical line* gets
     # its own evenly-spaced slot along the box edge - not just one slot per

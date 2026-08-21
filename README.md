@@ -87,11 +87,7 @@ LLDP Neighbors module was checked for the report body. Non-switch LLDP
 neighbors (APs, phones, etc.) are filtered out — only links between two
 switches that are both in the report are drawn. The diagram reads right
 to left: root/core switch(es) are pinned to the right edge, each hop
-toward the access layer sits further left, and the legend lives in its
-own reserved column on the diagram's left edge (`LEGEND_W`), running
-vertically alongside it in the same rotated orientation - not as a
-separate element below the diagram (see the legend paragraph further
-down for why). Boxes are
+toward the access layer sits further left. Boxes are
 narrow and tall rather than wide and short, with hostname / model /
 (root switches only) STP priority as three separate *columns* side by
 side across the box's width, each rotated 90 degrees to read top-to-
@@ -150,29 +146,26 @@ top-to-bottom, rotated 90 degrees the same as the switch boxes' own text,
 so the whole diagram shares one text orientation. A plain (non-LAG) link
 is one gray line with a single port label at each end.
 
-The legend is drawn directly inside the main diagram's own `<svg>` canvas
-(`_legend_parts`), in a column reserved on the left edge (`LEGEND_W`,
-added on top of the tier-layout width budget `TARGET_W` after every box
-position is computed - see `build_switch_topology`) - not as a separate
-HTML block or second `<svg>` stacked below the diagram, which is where it
-lived through two earlier attempts. The first of those used CSS
+The legend is a small, plain HTML/CSS block below the diagram (labeled
+"Edge Switches" / "Core Switches" / "LAG"), left-aligned by default since
+it has no `margin: auto` the way the centered diagram `<svg>` above it
+does - not part of the SVG at all. Two earlier attempts put the legend's
+text in the diagram's own rotated orientation: first via CSS
 `writing-mode: vertical-rl`, which WeasyPrint rendered by collapsing each
 rotated label's reserved layout box to near-zero width instead of the
 tall-narrow footprint vertical text actually needs, overlapping every
-item; the second used a second `<svg>` with the diagram's own
-`rotate(90 cx cy)` technique, which did read correctly but sat below the
-diagram - and reading a printed page doesn't work like reading a diagram
-whose own text you can turn 90 degrees to read: nobody rotates the page
-just to read one paragraph below it, so a legend "below" that reads
-sideways is backwards regardless of whether its own text technique is
-correct. Putting it in a column that runs *alongside* the diagram, sharing
-the same reading convention as the boxes beside it, is what actually
-reads naturally. Its caption truncates to whatever height is actually
-left over after the three swatch+label items and the diagram's own box
-column above it (`_legend_parts`) - an SVG element clips its own content
-at its own bounds, so an untruncated caption longer than the column's
-remaining space doesn't spill onto the page around it, it silently cuts
-off mid-word.
+item; then by drawing it directly inside the diagram's own `<svg>` canvas
+in a column reserved on the left edge, which did read correctly but
+reserving a full-height column for a handful of short labels visibly
+shrank and off-centered the actual diagram to make room for what was
+mostly empty space in that column. A legend this small only needs a
+compact corner - normal horizontal text in ordinary HTML flow needs none
+of that reserved space, and reads naturally without asking anyone to
+rotate the page to read one line of text below a diagram whose own
+content happens to be rotated. (CSS flexbox `gap` isn't respected by this
+project's WeasyPrint version either - silently dropped rather than
+erroring, which rendered every legend item flush against the next with
+no space between them; margins on each item avoid that failure mode.)
 
 Every individual physical line touching a box - not just every LAG as a
 whole - gets its own independent, evenly-spaced slot along that box's

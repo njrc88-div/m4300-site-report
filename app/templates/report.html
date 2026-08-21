@@ -101,6 +101,16 @@
   .topology-page h2 { color: #001E62; font-size: 17pt; border-bottom: 2pt solid #00BFB2; padding-bottom: 0.15cm; margin-bottom: 0.2cm; }
   .topology-page .sub { color: #605E5C; font-size: 9pt; margin-bottom: 0.3cm; }
   .topology-page svg { display: block; margin: 0 auto; max-width: 100%; }
+  .topology-page .legend {
+    margin-top: 0.3cm; font-size: 7pt; color: #605E5C;
+  }
+  /* flexbox `gap` isn't respected by this WeasyPrint version - it's
+     silently dropped rather than erroring, so items rendered with zero
+     spacing between them and visibly overlapped. Margins on each item
+     are supported everywhere and don't have that failure mode. */
+  .topology-page .legend .item { display: inline-block; margin-right: 0.45cm; white-space: nowrap; }
+  .topology-page .legend .swatch { display: inline-block; width: 8pt; height: 8pt; border-radius: 2pt; margin-right: 0.12cm; vertical-align: middle; }
+  .topology-page .legend .caption { display: inline-block; font-style: italic; color: #888B8D; }
 </style>
 </head>
 <body>
@@ -130,15 +140,20 @@
   <h2>Site topology</h2>
   <div class="sub">Switch-to-switch links discovered via LLDP. Non-switch neighbors (access points, phones, etc.) are omitted.</div>
   {{ topology_svg | safe }}
-  <!-- The legend lives inside topology_svg itself, in a reserved column on
-       the diagram's left edge (see LEGEND_W / _legend_parts in
-       topology.py) - not a separate HTML block - so its swatch+label
-       items share the main canvas's coordinate system and can use the
-       exact same rotate(90) text technique as every label in the diagram
-       beside it. CSS `writing-mode: vertical-rl` was tried first for an
-       earlier stacked-below version but WeasyPrint collapsed the rotated
-       label boxes instead of reserving their vertical footprint,
-       overlapping every item. -->
+  <!-- A plain HTML/CSS block, left-aligned by default (no margin:auto,
+       unlike the centered svg above it) - two earlier attempts put the
+       legend's text in the diagram's own rotated orientation (first via
+       CSS writing-mode, then inside the SVG's own canvas in a reserved
+       column), but a legend this small only needs a compact corner, and
+       reserving a full-height column for it just shrank and off-centered
+       the actual diagram to make room for what was mostly empty space in
+       that column. Normal horizontal text needs none of that. -->
+  <div class="legend">
+    <span class="item"><span class="swatch" style="background:#EEF0F5;border:0.5pt solid #B1B3B3;"></span>Edge Switches</span>
+    <span class="item"><span class="swatch" style="background:#001E62;"></span>Core Switches</span>
+    <span class="item"><span class="swatch" style="background:linear-gradient(90deg,#00BFB2,#7B2FF7,#E8590C);"></span>LAG</span>
+    <span class="caption">Each LAG has its own colour; numbers are labeled at each end.</span>
+  </div>
 </div>
 {% endif %}
 
