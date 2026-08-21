@@ -366,7 +366,7 @@
          </label>`;
     if (label === null) return `<div class="switch-row"><div class="port-map-attach" style="margin-left:0;">${attach}</div></div>`;
     return `<div class="switch-row" data-id="${dataId}">
-      <div class="switch-toggle" style="cursor:default;">${label}</div>
+      <div class="switch-toggle">${label}</div>
       <div class="port-map-attach">${attach}</div>
     </div>`;
   }

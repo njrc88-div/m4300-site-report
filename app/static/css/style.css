@@ -120,16 +120,20 @@ table.switch-table input[type="number"] { width: 5rem; }
 .module-check .desc { font-size: 0.76rem; color: var(--gray-muted); }
 .module-check .cat { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--teal); font-weight: 700; }
 
-.switch-picker { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.6rem; }
+.switch-picker { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.6rem; }
+.switch-toggle {
+  border: 1px solid var(--gray-line); border-radius: 999px; padding: 0.35rem 0.75rem;
+  font-size: 0.82rem; cursor: pointer; user-select: none; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.switch-toggle.selected { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+.image-attach-picker { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.6rem; }
 .switch-row {
   border: 1px solid var(--gray-line); border-radius: 8px; padding: 0.5rem 0.75rem;
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
 }
-.switch-row .switch-toggle {
-  border: 1px solid var(--gray-line); border-radius: 999px; padding: 0.35rem 0.75rem;
-  font-size: 0.82rem; cursor: pointer; user-select: none; flex-shrink: 0;
-}
-.switch-row .switch-toggle.selected { background: var(--navy); color: #fff; border-color: var(--navy); }
+.switch-row .switch-toggle { cursor: default; }
 .switch-row .port-map-attach {
   display: flex; align-items: center; gap: 0.4rem; margin-left: auto;
   font-size: 0.78rem; color: var(--gray-muted);
