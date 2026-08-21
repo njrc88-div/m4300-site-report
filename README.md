@@ -146,26 +146,32 @@ top-to-bottom, rotated 90 degrees the same as the switch boxes' own text,
 so the whole diagram shares one text orientation. A plain (non-LAG) link
 is one gray line with a single port label at each end.
 
-The legend is a small, plain HTML/CSS block below the diagram (labeled
-"Edge Switches" / "Core Switches" / "LAG"), left-aligned by default since
-it has no `margin: auto` the way the centered diagram `<svg>` above it
-does - not part of the SVG at all. Two earlier attempts put the legend's
-text in the diagram's own rotated orientation: first via CSS
-`writing-mode: vertical-rl`, which WeasyPrint rendered by collapsing each
-rotated label's reserved layout box to near-zero width instead of the
-tall-narrow footprint vertical text actually needs, overlapping every
-item; then by drawing it directly inside the diagram's own `<svg>` canvas
-in a column reserved on the left edge, which did read correctly but
-reserving a full-height column for a handful of short labels visibly
-shrank and off-centered the actual diagram to make room for what was
-mostly empty space in that column. A legend this small only needs a
-compact corner - normal horizontal text in ordinary HTML flow needs none
-of that reserved space, and reads naturally without asking anyone to
-rotate the page to read one line of text below a diagram whose own
-content happens to be rotated. (CSS flexbox `gap` isn't respected by this
-project's WeasyPrint version either - silently dropped rather than
-erroring, which rendered every legend item flush against the next with
-no space between them; margins on each item avoid that failure mode.)
+The legend (`_legend_svg`) is a second, small, standalone `<svg>` after
+the diagram's own, not part of its canvas and not sized against its
+height - three swatch+label rows ("Edge Switches" / "Core Switches" /
+"LAG"), each individually rotated 90 degrees the same as the box text
+beside them and stacked tightly, each given exactly the vertical room its
+own rotated length needs (the same lesson learned sizing the switch boxes
+themselves - a fixed slot sized for the swatch overlaps the instant a
+label needs more room than that). CSS makes it left-aligned rather than
+centered (`svg:last-of-type` has no `margin: auto`, unlike the diagram's
+own `svg:first-of-type`), so it sits at the bottom-left instead of
+centered under the diagram.
+
+Two earlier attempts got this wrong before landing here: CSS
+`writing-mode: vertical-rl` collapsed each rotated label's reserved
+layout box to near-zero width instead of the tall-narrow footprint
+vertical text actually needs, overlapping every item; drawing the legend
+directly inside the diagram's own canvas, in a column reserved on the
+left edge, did read correctly but reserving a full-height column for
+three short labels visibly shrank and off-centered the actual diagram to
+make room for what was mostly empty space in that column. There's no
+caption sentence, deliberately: a full explanatory sentence rotated at a
+legible size needs more vertical room than fits next to a full-height
+diagram on the same page, and the diagram already shows a number beside
+every line and each LAG in its own color without one - `TARGET_H` is
+tuned to leave just enough room below the diagram for these three rows,
+not a whole paragraph.
 
 Every individual physical line touching a box - not just every LAG as a
 whole - gets its own independent, evenly-spaced slot along that box's
