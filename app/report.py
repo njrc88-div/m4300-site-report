@@ -28,6 +28,7 @@ def render_report_pdf(
     switch_results: list[dict],
     topology_svg: str | None = None,
     abridged: bool = False,
+    vlan_info_image: str | None = None,
 ) -> bytes:
     template = _env.get_template("report.html")
     html = template.render(
@@ -41,5 +42,6 @@ def render_report_pdf(
         logo_path=LOGO_PATH,
         topology_svg=topology_svg,
         abridged=abridged,
+        vlan_info_image=vlan_info_image,
     )
     return HTML(string=html, base_url=str(APP_DIR)).write_pdf()

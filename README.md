@@ -69,15 +69,16 @@ The app has three tabs:
    drops low-value per-interface detail that's mostly defaults on a typical
    switch (currently: the STP per-interface Guard Mode/Edge Port/BPDU
    table) — off by default, so a fully detailed report is always still one
-   click away. Each switch in the "Switches to Include" list can also have
-   a **port/VLAN map image** attached (e.g. a screenshot from whatever tool
-   documents the site's port-to-VLAN assignments) - it's embedded as-is in
-   that switch's own report section, under a "Port / VLAN Map" heading, not
-   fetched or generated from live switch data. Attached images are read
-   client-side into a data: URL and kept in the same browser localStorage
-   entry as that switch's other saved fields (2MB cap per image - browser
-   storage quotas are limited, and this is by far the largest thing stored
-   there).
+   click away. A **Site Diagrams** section lets you attach static images -
+   not fetched or generated from live switch data - that appear together
+   on their own page right after the topology diagram: one site-wide
+   **VLAN Information** image, plus one **Port Layout** image per switch
+   configured on the Switches tab (the number of port-layout slots always
+   matches that switch list, independent of which switches are toggled
+   into this particular report). Attached images are read client-side into
+   a data: URL and kept in browser localStorage (2MB cap per image -
+   browser storage quotas are limited, and these are by far the largest
+   things stored there).
 
 Report content is cleaned up automatically regardless of the abridged
 toggle: down ports with no description and no LLDP neighbor (i.e.

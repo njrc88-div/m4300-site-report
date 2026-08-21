@@ -2,7 +2,9 @@
   "use strict";
 
   const STORAGE_KEY = "m4300_switches_v1";
+  const VLAN_IMAGE_STORAGE_KEY = "m4300_vlan_info_image_v1";
   let switches = loadSwitches();
+  let vlanInfoImage = loadVlanInfoImage();
   let modules = []; // populated from /api/modules
   let selectedModuleIds = new Set();
   let selectedSwitchIds = new Set();
@@ -28,6 +30,25 @@
       // Most likely quota exceeded - attached port/VLAN map images are by
       // far the largest thing stored here, so that's the first thing
       // worth telling the user to trim if this ever fires.
+      toast("Couldn't save - browser storage is full. Try removing a large attached image.");
+      return false;
+    }
+  }
+
+  function loadVlanInfoImage() {
+    try {
+      return localStorage.getItem(VLAN_IMAGE_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveVlanInfoImage() {
+    try {
+      if (vlanInfoImage) localStorage.setItem(VLAN_IMAGE_STORAGE_KEY, vlanInfoImage);
+      else localStorage.removeItem(VLAN_IMAGE_STORAGE_KEY);
+      return true;
+    } catch (err) {
       toast("Couldn't save - browser storage is full. Try removing a large attached image.");
       return false;
     }
@@ -61,6 +82,8 @@
       if (btn.dataset.tab === "explorer") renderExploreSwitchOptions();
       if (btn.dataset.tab === "builder") {
         renderSwitchPicker();
+        renderPortLayoutPicker();
+        renderVlanImageAttach();
         renderModuleGrid();
       }
     });
@@ -255,22 +278,8 @@
     if (selectedSwitchIds.size === 0) usable.forEach((s) => selectedSwitchIds.add(s.id));
     el.innerHTML = usable
       .map(
-        (s) => `<div class="switch-row" data-id="${s.id}">
-          <div class="switch-toggle ${selectedSwitchIds.has(s.id) ? "selected" : ""}" data-id="${s.id}">
-            ${escapeHtml(s.name || s.host)}${s.model ? ` <span style="opacity:0.7">· ${escapeHtml(s.model)}</span>` : ""}
-          </div>
-          <div class="port-map-attach">
-            ${
-              s.port_map_image
-                ? `<img class="port-map-thumb" src="${s.port_map_image}" alt="">
-                   <span>Port/VLAN map attached</span>
-                   <button type="button" class="port-map-remove" data-id="${s.id}" title="Remove image">&times;</button>`
-                : `<label style="cursor:pointer;">
-                     Attach port/VLAN map image
-                     <input type="file" accept="image/*" class="port-map-input" data-id="${s.id}" style="display:none;">
-                   </label>`
-            }
-          </div>
+        (s) => `<div class="switch-toggle ${selectedSwitchIds.has(s.id) ? "selected" : ""}" data-id="${s.id}">
+          ${escapeHtml(s.name || s.host)}${s.model ? ` <span style="opacity:0.7">· ${escapeHtml(s.model)}</span>` : ""}
         </div>`
       )
       .join("");
@@ -282,7 +291,88 @@
         toggle.classList.toggle("selected");
       });
     });
-    el.querySelectorAll(".port-map-input").forEach((input) => {
+  }
+
+  // One "Port Layout" image-attach row per switch configured on the
+  // Switches tab (any switch with a host set, regardless of test/connect
+  // status) - the count here is always driven by that same `switches`
+  // list, not by which switches are toggled "included" in this report.
+  function renderPortLayoutPicker() {
+    const el = document.getElementById("rb-port-layout-picker");
+    const usable = switches.filter((s) => s.host);
+    if (usable.length === 0) {
+      el.innerHTML = `<div class="empty-state">No switches saved yet. Go to the Switches tab first.</div>`;
+      return;
+    }
+    el.innerHTML = usable.map((s) => renderImageAttachRow({
+      label: escapeHtml(s.name || s.host),
+      image: s.port_map_image,
+      inputClass: "port-layout-input",
+      removeClass: "port-layout-remove",
+      dataId: s.id,
+    })).join("");
+    wireImageAttachRow(el, ".port-layout-input", ".port-layout-remove", {
+      onChange: (id, dataUrl) => {
+        const sw = switches.find((s) => s.id === id);
+        if (!sw) return null;
+        sw.port_map_image = dataUrl;
+        if (saveSwitches()) return true;
+        sw.port_map_image = null;
+        return false;
+      },
+      onRemove: (id) => {
+        const sw = switches.find((s) => s.id === id);
+        if (!sw) return;
+        sw.port_map_image = null;
+        saveSwitches();
+      },
+      rerender: renderPortLayoutPicker,
+    });
+  }
+
+  // Single site-wide VLAN-information image, unrelated to any one switch.
+  function renderVlanImageAttach() {
+    const el = document.getElementById("rb-vlan-image-attach");
+    el.innerHTML = renderImageAttachRow({
+      label: null,
+      image: vlanInfoImage,
+      inputClass: "vlan-image-input",
+      removeClass: "vlan-image-remove",
+      dataId: "vlan-info",
+    });
+    wireImageAttachRow(el, ".vlan-image-input", ".vlan-image-remove", {
+      onChange: (_id, dataUrl) => {
+        vlanInfoImage = dataUrl;
+        if (saveVlanInfoImage()) return true;
+        vlanInfoImage = null;
+        return false;
+      },
+      onRemove: () => {
+        vlanInfoImage = null;
+        saveVlanInfoImage();
+      },
+      rerender: renderVlanImageAttach,
+    });
+  }
+
+  function renderImageAttachRow({ label, image, inputClass, removeClass, dataId }) {
+    const attach = image
+      ? `<img class="port-map-thumb" src="${image}" alt="">
+         <span>Attached</span>
+         <button type="button" class="${removeClass}" data-id="${dataId}" title="Remove image">&times;</button>`
+      : `<label style="cursor:pointer;">
+           Browse&hellip;
+           <input type="file" accept="image/*" class="${inputClass}" data-id="${dataId}" style="display:none;">
+         </label>`;
+    if (label === null) return `<div class="switch-row"><div class="port-map-attach" style="margin-left:0;">${attach}</div></div>`;
+    return `<div class="switch-row" data-id="${dataId}">
+      <div class="switch-toggle" style="cursor:default;">${label}</div>
+      <div class="port-map-attach">${attach}</div>
+    </div>`;
+  }
+
+  function wireImageAttachRow(el, inputSel, removeSel, { onChange, onRemove, rerender }) {
+    el.querySelectorAll(inputSel).forEach((input) => {
       input.addEventListener("change", async () => {
         const file = input.files[0];
         if (!file) return;
@@ -291,27 +381,19 @@
           input.value = "";
           return;
         }
-        const sw = switches.find((s) => s.id === input.dataset.id);
-        if (!sw) return;
         try {
-          sw.port_map_image = await readFileAsDataURL(file);
-          if (!saveSwitches()) {
-            sw.port_map_image = null;
-            return;
-          }
-          renderSwitchPicker();
+          const dataUrl = await readFileAsDataURL(file);
+          if (onChange(input.dataset.id, dataUrl) === false) return;
+          rerender();
         } catch (err) {
           toast(`Couldn't read that image: ${err}`);
         }
       });
     });
-    el.querySelectorAll(".port-map-remove").forEach((btn) => {
+    el.querySelectorAll(removeSel).forEach((btn) => {
       btn.addEventListener("click", () => {
-        const sw = switches.find((s) => s.id === btn.dataset.id);
-        if (!sw) return;
-        sw.port_map_image = null;
-        saveSwitches();
-        renderSwitchPicker();
+        onRemove(btn.dataset.id);
+        rerender();
       });
     });
   }
@@ -375,6 +457,7 @@
           switches: chosenSwitches,
           modules: Array.from(selectedModuleIds),
           abridged: document.getElementById("rb-abridged").checked,
+          vlan_info_image: vlanInfoImage || null,
         }),
       });
       if (!resp.ok) {
@@ -422,6 +505,8 @@
     renderExploreModuleOptions();
     renderExploreSwitchOptions();
     renderSwitchPicker();
+    renderPortLayoutPicker();
+    renderVlanImageAttach();
     renderModuleGrid();
   }
 

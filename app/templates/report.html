@@ -65,8 +65,10 @@
     border-left: 4pt solid #00BFB2;
     padding-left: 0.2cm;
   }
-  .port-map-block { margin-bottom: 0.3cm; }
-  .port-map-image { display: block; max-width: 100%; border: 0.5pt solid #D9D9D6; border-radius: 3pt; }
+  .site-diagrams-page { page-break-before: always; }
+  .site-diagrams-page h2 { color: #001E62; font-size: 17pt; border-bottom: 2pt solid #00BFB2; padding-bottom: 0.15cm; margin-bottom: 0.2cm; }
+  .diagram-block { margin-bottom: 0.5cm; page-break-inside: avoid; }
+  .diagram-image { display: block; max-width: 100%; border: 0.5pt solid #D9D9D6; border-radius: 3pt; }
   .error-banner {
     background: #FDECEC; border: 1pt solid #D64545; color: #7A1F1F;
     padding: 0.3cm 0.4cm; border-radius: 3pt; margin: 0.3cm 0;
@@ -159,6 +161,31 @@
 </div>
 {% endif %}
 
+<!-- ===================== SITE DIAGRAMS ===================== -->
+<!-- Static, user-attached images (not read from any switch): one
+     site-wide VLAN information image, plus one port-layout image per
+     switch that has one - all together on their own page right after
+     the topology diagram, rather than scattered into each switch's own
+     section further down. -->
+{% set switches_with_port_layout = switches|selectattr('switch.port_map_image')|list %}
+{% if vlan_info_image or switches_with_port_layout %}
+<div class="site-diagrams-page">
+  <h2>Site Diagrams</h2>
+  {% if vlan_info_image %}
+  <div class="diagram-block">
+    <h3 class="section-title">VLAN Information</h3>
+    <img class="diagram-image" src="{{ vlan_info_image }}" alt="VLAN information">
+  </div>
+  {% endif %}
+  {% for entry in switches_with_port_layout %}
+  <div class="diagram-block">
+    <h3 class="section-title">{{ entry.switch.name }} &mdash; Port Layout</h3>
+    <img class="diagram-image" src="{{ entry.switch.port_map_image }}" alt="Port layout for {{ entry.switch.name }}">
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- ===================== PER-SWITCH SECTIONS ===================== -->
 {% for entry in switches %}
 {% set sw = entry.switch %}
@@ -171,13 +198,6 @@
     &nbsp;&middot;&nbsp; S/N {{ entry.device_info.serialNumber or "-" }}
   {% endif %}
 </div>
-
-{% if sw.port_map_image %}
-<div class="port-map-block">
-  <h3 class="section-title">Port / VLAN Map</h3>
-  <img class="port-map-image" src="{{ sw.port_map_image }}" alt="Port to VLAN map for {{ sw.name }}">
-</div>
-{% endif %}
 
 {% if entry.error %}
   <div class="error-banner"><strong>Could not connect to this switch.</strong><br>{{ entry.error }}</div>

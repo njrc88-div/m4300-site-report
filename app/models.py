@@ -11,8 +11,8 @@ class SwitchCredential(BaseModel):
     password: str
     verify_tls: bool = False
     port_map_image: str | None = Field(
-        None, description="Optional data: URL of a user-attached port/VLAN map image for this "
-        "switch, embedded in its report section as-is - not fetched from the switch."
+        None, description="Optional data: URL of a user-attached port layout image for this "
+        "switch, shown on the site-diagrams page as-is - not fetched from the switch."
     )
 
 
@@ -43,3 +43,7 @@ class ReportRequest(BaseModel):
     switches: list[SwitchCredential]
     modules: list[str]
     abridged: bool = False
+    vlan_info_image: str | None = Field(
+        None, description="Optional data: URL of a single site-wide VLAN information image "
+        "(e.g. a colour/VLAN key), shown on the site-diagrams page as-is."
+    )

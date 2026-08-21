@@ -102,6 +102,22 @@
     </div>
 
     <div class="card">
+      <h2>Site Diagrams <span class="hint" style="font-weight:normal;">(optional)</span></h2>
+      <p class="hint">
+        Static images, not read from any switch - shown together on their own page, right after the
+        topology diagram and before the per-switch sections.
+      </p>
+      <div class="field" style="max-width:360px;">
+        <label>VLAN Information (one, site-wide)</label>
+        <div id="rb-vlan-image-attach"></div>
+      </div>
+      <div class="field" style="margin-top:0.8rem;">
+        <label>Port Layout (one per switch below)</label>
+        <div class="switch-picker" id="rb-port-layout-picker"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Switches to Include</h2>
       <p class="hint">Click to toggle. Only switches with saved credentials appear here.</p>
       <div class="switch-picker" id="rb-switch-picker"></div>
