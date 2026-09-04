@@ -69,7 +69,7 @@ def _login_page(error: str | None = None) -> str:
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in - M4300 Site Report Generator</title>
+<title>Sign in - NETGEAR Site Report Generator</title>
 <link rel="stylesheet" href="/static/css/style.css">
 <style>
   body {{ display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
@@ -93,7 +93,7 @@ def _login_page(error: str | None = None) -> str:
 </head><body>
   <form class="login-card" method="post" action="/auth/login">
     <img src="/static/img/diversified-mark.png" alt="Diversified">
-    <h1>M4300 Site Report Generator</h1>
+    <h1>NETGEAR Site Report Generator</h1>
     {error_html}
     <label for="username">Username</label>
     <input type="text" id="username" name="username" autocomplete="username" autofocus required>

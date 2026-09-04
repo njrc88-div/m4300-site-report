@@ -28,7 +28,7 @@ from .topology import build_switch_topology
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("m4300_report")
 
-app = FastAPI(title="M4300 Site Report Generator")
+app = FastAPI(title="NETGEAR Site Report Generator")
 
 # Entirely opt-in - see app/auth.py's module docstring. Adds nothing to
 # the request path unless SESSION_SECRET_KEY is set.

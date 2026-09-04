@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>M4300 Site Report Generator</title>
+<title>NETGEAR Site Report Generator</title>
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 <header class="app-header">
   <img src="/static/img/diversified-mark.png" alt="Diversified">
   <div>
-    <div class="title">M4300 Site Report Generator</div>
+    <div class="title">NETGEAR Site Report Generator</div>
     <div class="subtitle">NETGEAR M4300 REST API &rarr; branded PDF site report</div>
   </div>
   <div id="whoami" class="whoami"></div>
@@ -35,17 +35,22 @@
         they are sent to this app's backend only when you click Test, Fetch, or Generate, and are
         never written to disk on the server.
       </p>
+      <div class="field" style="max-width:320px; margin-bottom:1rem;">
+        <label>Global Password</label>
+        <input type="password" id="global-switch-password" placeholder="Used for every switch below, unless overridden">
+      </div>
       <table class="switch-table" id="switch-table">
         <thead>
           <tr>
-            <th style="width:13%">Label</th>
-            <th style="width:14%">Host / IP</th>
-            <th style="width:7%">Port</th>
-            <th style="width:12%">Username</th>
-            <th style="width:12%">Password</th>
+            <th style="width:12%">Label</th>
+            <th style="width:13%">Host / IP</th>
+            <th style="width:6%">Port</th>
+            <th style="width:11%">Username</th>
+            <th style="width:11%">Password</th>
+            <th style="width:7%">Override</th>
             <th style="width:7%">Verify TLS</th>
-            <th style="width:13%">Model (detected)</th>
-            <th style="width:13%">Status</th>
+            <th style="width:12%">Model (detected)</th>
+            <th style="width:12%">Status</th>
             <th style="width:9%"></th>
           </tr>
         </thead>

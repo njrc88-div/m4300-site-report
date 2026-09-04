@@ -3,8 +3,10 @@
 
   const STORAGE_KEY = "m4300_switches_v1";
   const VLAN_IMAGE_STORAGE_KEY = "m4300_vlan_info_image_v1";
+  const GLOBAL_PASSWORD_STORAGE_KEY = "m4300_global_switch_password_v1";
   let switches = loadSwitches();
   let vlanInfoImage = loadVlanInfoImage();
+  let globalSwitchPassword = loadGlobalPassword();
   let modules = []; // populated from /api/modules
   let selectedModuleIds = new Set();
   let selectedSwitchIds = new Set();
@@ -15,7 +17,12 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
-      return parsed.map((s) => ({ status: "pending", statusMsg: "", ...s }));
+      // Switches saved before the global-password feature existed have no
+      // password_override field - default it from whether they already
+      // have a password saved, so existing per-switch passwords keep
+      // working until someone explicitly opts a switch into the global
+      // password by unchecking Override.
+      return parsed.map((s) => ({ status: "pending", statusMsg: "", password_override: !!s.password, ...s }));
     } catch {
       return [];
     }
@@ -30,6 +37,25 @@
       // Most likely quota exceeded - attached port/VLAN map images are by
       // far the largest thing stored here, so that's the first thing
       // worth telling the user to trim if this ever fires.
+      toast("Couldn't save - browser storage is full. Try removing a large attached image.");
+      return false;
+    }
+  }
+
+  function loadGlobalPassword() {
+    try {
+      return localStorage.getItem(GLOBAL_PASSWORD_STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function saveGlobalPassword() {
+    try {
+      if (globalSwitchPassword) localStorage.setItem(GLOBAL_PASSWORD_STORAGE_KEY, globalSwitchPassword);
+      else localStorage.removeItem(GLOBAL_PASSWORD_STORAGE_KEY);
+      return true;
+    } catch (err) {
       toast("Couldn't save - browser storage is full. Try removing a large attached image.");
       return false;
     }
@@ -62,6 +88,7 @@
       port: 8443,
       username: "",
       password: "",
+      password_override: false,
       verify_tls: false,
       model: "",
       firmware: "",
@@ -111,7 +138,7 @@
     tbody.innerHTML = "";
     if (switches.length === 0) {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="9" class="empty-state">No switches yet. Click "Add Switch" to get started.</td>`;
+      tr.innerHTML = `<td colspan="10" class="empty-state">No switches yet. Click "Add Switch" to get started.</td>`;
       tbody.appendChild(tr);
       return;
     }
@@ -123,7 +150,10 @@
         <td><input type="text" data-field="host" value="${escapeAttr(sw.host)}" placeholder="10.1.1.5"></td>
         <td><input type="number" data-field="port" value="${sw.port}"></td>
         <td><input type="text" data-field="username" value="${escapeAttr(sw.username)}" placeholder="admin"></td>
-        <td><input type="password" data-field="password" value="${escapeAttr(sw.password)}"></td>
+        <td class="password-cell">${sw.password_override
+          ? `<input type="password" data-field="password" value="${escapeAttr(sw.password)}">`
+          : `<span class="empty-state" style="padding:0">Using global</span>`}</td>
+        <td style="text-align:center"><input type="checkbox" data-field="password_override" ${sw.password_override ? "checked" : ""} title="Use a different password for this switch"></td>
         <td style="text-align:center"><input type="checkbox" data-field="verify_tls" ${sw.verify_tls ? "checked" : ""}></td>
         <td class="model-cell">${modelCell(sw)}</td>
         <td>${statusPill(sw)}</td>
@@ -137,8 +167,9 @@
       tr.querySelectorAll("input").forEach((input) => {
         input.addEventListener("input", () => {
           const field = input.dataset.field;
-          sw[field] = field === "verify_tls" ? input.checked : field === "port" ? Number(input.value) : input.value;
+          sw[field] = field === "verify_tls" || field === "password_override" ? input.checked : field === "port" ? Number(input.value) : input.value;
           saveSwitches();
+          if (field === "password_override") renderSwitchTable();
         });
       });
       tr.querySelector(".test-btn").addEventListener("click", () => testConnection(sw, tr));
@@ -174,7 +205,7 @@
 
   async function testConnection(sw, tr) {
     sw.status = "testing";
-    tr.querySelector("td:nth-child(8)").innerHTML = statusPill(sw);
+    tr.querySelector("td:nth-child(9)").innerHTML = statusPill(sw);
     try {
       const resp = await fetch("/api/test-connection", {
         method: "POST",
@@ -195,7 +226,7 @@
     }
     saveSwitches();
     tr.querySelector(".model-cell").innerHTML = modelCell(sw);
-    tr.querySelector("td:nth-child(8)").innerHTML = statusPill(sw);
+    tr.querySelector("td:nth-child(9)").innerHTML = statusPill(sw);
   }
 
   function toSwitchPayload(sw) {
@@ -204,7 +235,7 @@
       host: sw.host,
       port: Number(sw.port) || 8443,
       username: sw.username,
-      password: sw.password,
+      password: sw.password_override ? sw.password : globalSwitchPassword,
       verify_tls: !!sw.verify_tls,
       port_map_image: sw.port_map_image || null,
     };
@@ -223,6 +254,13 @@
     switches.push(newSwitch());
     saveSwitches();
     renderSwitchTable();
+  });
+
+  const globalPasswordInput = document.getElementById("global-switch-password");
+  globalPasswordInput.value = globalSwitchPassword;
+  globalPasswordInput.addEventListener("input", () => {
+    globalSwitchPassword = globalPasswordInput.value;
+    saveGlobalPassword();
   });
 
   // ---------- explorer tab ----------
