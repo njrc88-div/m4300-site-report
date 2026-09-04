@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -47,3 +49,19 @@ class ReportRequest(BaseModel):
         None, description="Optional data: URL of a single site-wide VLAN information image "
         "(e.g. a colour/VLAN key), shown on the site-diagrams page as-is."
     )
+
+
+# -- Admin: account management (app/users.py) -------------------------------
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: Literal["admin", "user"]
+
+
+class SetRoleRequest(BaseModel):
+    role: Literal["admin", "user"]
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str

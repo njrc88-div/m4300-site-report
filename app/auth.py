@@ -1,68 +1,43 @@
-"""Google sign-in as an access gate for this app.
+"""Local username/password login as an access gate for this app - not a
+multi-tenant identity system in the sense of per-user data (switch
+credentials still live only in each browser's own localStorage,
+unchanged); it's a login gate plus a role ("admin" or "user") checked
+before the app's own admin routes, backed by app/users.py's SQLite store.
 
-This is not a multi-tenant identity system - the app itself has no user
-accounts, no per-user data, and no per-user credential storage (switch
-credentials still live only in each browser's own localStorage, same as
-before). A successful Google sign-in just proves "this browser belongs to
-someone allowed to use this tool" and sets a signed session cookie;
-that's the whole job of everything in this file.
-
-Entirely opt-in: if GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET /
-SESSION_SECRET_KEY aren't set, AUTH_ENABLED is False and main.py adds no
-session middleware and no auth gate at all - the app runs exactly as it
-did before this file existed. That's deliberate: it keeps every existing
-deployment working unchanged until someone actually sets up a Google
-Cloud OAuth client and turns this on (see README for the setup steps),
-rather than a new required env var silently breaking anyone who pulls
-this update without reading anything.
+Entirely opt-in via SESSION_SECRET_KEY, same pattern as the Google
+sign-in this replaced: unset it and AUTH_ENABLED is False, main.py adds
+no session middleware and no auth gate at all, and the app runs exactly
+as it did with no login of any kind. That's deliberate - it keeps
+existing deployments working unchanged until someone actually sets up
+SESSION_SECRET_KEY (and, for the very first admin account, the two
+INITIAL_ADMIN_* vars - see users.bootstrap_initial_admin).
 """
 from __future__ import annotations
 
 import os
 
-from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-
-from . import audit
 from starlette.responses import JSONResponse
 
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+from . import audit, users
+
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY", "")
-# Comma-separated allow-list. Google authenticates *any* Google account,
-# not just ones belonging to this site - without this, "signed in with
-# Google" and "allowed to use this app" aren't the same thing. Empty
-# means "any successfully authenticated Google account", which is only
-# reasonable if you're relying on the OAuth consent screen's own Testing
-# mode (Google-side allow-list) to restrict who can complete login at all.
-ALLOWED_EMAILS = {
-    e.strip().lower() for e in os.environ.get("ALLOWED_GOOGLE_EMAILS", "").split(",") if e.strip()
-}
-# Off by default because local development is plain http://localhost -
-# a cookie marked Secure is simply dropped by the browser over http, which
+INITIAL_ADMIN_USERNAME = os.environ.get("INITIAL_ADMIN_USERNAME", "")
+INITIAL_ADMIN_PASSWORD = os.environ.get("INITIAL_ADMIN_PASSWORD", "")
+# Off by default because local development is plain http://localhost - a
+# cookie marked Secure is simply dropped by the browser over http, which
 # would silently break login rather than fail loudly. Set to "true" once
 # this runs behind real https.
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").strip().lower() == "true"
 
-AUTH_ENABLED = bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and SESSION_SECRET_KEY)
+AUTH_ENABLED = bool(SESSION_SECRET_KEY)
 
 # Reachable without a session: the login flow itself, and static assets
-# (the SPA shell needs its own JS/CSS to even render the "redirecting to
-# Google..." moment, and none of it is sensitive on its own).
-_PUBLIC_PATHS = {"/auth/login", "/auth/callback", "/auth/logout"}
+# (the SPA shell needs its own JS/CSS, and none of it is sensitive).
+_PUBLIC_PATHS = {"/auth/login", "/auth/logout"}
 _PUBLIC_PREFIXES = ("/static/",)
-
-oauth = OAuth()
-if AUTH_ENABLED:
-    oauth.register(
-        name="google",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-    )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -72,48 +47,90 @@ def _is_public_path(path: str) -> bool:
 
 
 def current_user(request: Request) -> dict | None:
+    # request.session only exists when SessionMiddleware is installed,
+    # which main.py only does when AUTH_ENABLED - guard here too so every
+    # caller (not just the ones that remember to check AUTH_ENABLED first)
+    # gets a clean None instead of an AssertionError.
+    if not AUTH_ENABLED:
+        return None
     return request.session.get("user")
 
 
+def require_admin(request: Request) -> dict:
+    user = current_user(request)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(403, "Admin access required.")
+    return user
+
+
+def _login_page(error: str | None = None) -> str:
+    error_html = f'<div class="login-error">{error}</div>' if error else ""
+    return f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in - M4300 Site Report Generator</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+  body {{ display: flex; align-items: center; justify-content: center; min-height: 100vh; }}
+  .login-card {{
+    background: #fff; border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    padding: 2rem 2.2rem; width: 320px;
+  }}
+  .login-card img {{ height: 32px; margin-bottom: 1rem; }}
+  .login-card h1 {{ font-size: 1.1rem; margin: 0 0 1.2rem; color: var(--navy); }}
+  .login-card label {{ display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem; color: var(--gray-text); }}
+  .login-card input {{
+    width: 100%; padding: 0.5rem 0.6rem; margin-bottom: 1rem; border: 1px solid var(--gray-line);
+    border-radius: 5px; font-size: 0.9rem; box-sizing: border-box;
+  }}
+  .login-card button {{ width: 100%; }}
+  .login-error {{
+    background: var(--danger-bg); color: var(--danger); border-radius: 5px;
+    padding: 0.5rem 0.7rem; font-size: 0.82rem; margin-bottom: 1rem;
+  }}
+</style>
+</head><body>
+  <form class="login-card" method="post" action="/auth/login">
+    <img src="/static/img/diversified-mark.png" alt="Diversified">
+    <h1>M4300 Site Report Generator</h1>
+    {error_html}
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+    <button class="btn teal" type="submit">Sign in</button>
+  </form>
+</body></html>"""
+
+
 @router.get("/login")
-async def login(request: Request):
+async def login_form(request: Request):
     if not AUTH_ENABLED:
-        raise HTTPException(
-            500,
-            "Google sign-in isn't configured on this server (missing GOOGLE_CLIENT_ID, "
-            "GOOGLE_CLIENT_SECRET, or SESSION_SECRET_KEY).",
-        )
-    redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+        raise HTTPException(500, "Login isn't configured on this server (SESSION_SECRET_KEY isn't set).")
+    if current_user(request):
+        return RedirectResponse(url="/", status_code=303)
+    return HTMLResponse(_login_page())
 
 
-@router.get("/callback", name="auth_callback")
-async def callback(request: Request):
-    token = await oauth.google.authorize_access_token(request)
-    userinfo = token.get("userinfo") or await oauth.google.userinfo(token=token)
-    email = (userinfo.get("email") or "").strip().lower()
-    name = userinfo.get("name")
-    if not email:
-        raise HTTPException(403, "Google didn't return an email address for this account.")
-    if not userinfo.get("email_verified", True):
-        raise HTTPException(403, "This Google account's email address isn't verified.")
-    if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
-        audit.record_event("sign_in_denied", email=email, name=name, request=request)
-        raise HTTPException(403, f"{email} isn't authorized to use this app.")
-    request.session["user"] = {
-        "email": email,
-        "name": name,
-        "picture": userinfo.get("picture"),
-    }
-    audit.record_event("sign_in", email=email, name=name, request=request)
-    return RedirectResponse(url="/")
+@router.post("/login")
+async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+    if not AUTH_ENABLED:
+        raise HTTPException(500, "Login isn't configured on this server (SESSION_SECRET_KEY isn't set).")
+    user = users.verify_password(username, password)
+    if user is None:
+        audit.record_event("sign_in_denied", username=username.strip(), request=request)
+        return HTMLResponse(_login_page(error="Incorrect username or password."), status_code=401)
+    request.session["user"] = user
+    audit.record_event("sign_in", username=user["username"], request=request)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.get("/logout")
 async def logout(request: Request):
     user = current_user(request)
     if user:
-        audit.record_event("sign_out", email=user["email"], name=user.get("name"), request=request)
+        audit.record_event("sign_out", username=user["username"], request=request)
     request.session.clear()
     return RedirectResponse(url="/auth/login")
 

@@ -9,10 +9,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import audit, auth
+from . import audit, auth, users
 from .models import (
+    CreateUserRequest,
     ExploreRequest,
     ReportRequest,
+    ResetPasswordRequest,
+    SetRoleRequest,
     SwitchCredential,
     TestConnectionRequest,
     TestConnectionResponse,
@@ -28,9 +31,18 @@ logger = logging.getLogger("m4300_report")
 app = FastAPI(title="M4300 Site Report Generator")
 
 # Entirely opt-in - see app/auth.py's module docstring. Adds nothing to
-# the request path unless GOOGLE_CLIENT_ID/SECRET and SESSION_SECRET_KEY
-# are all set.
+# the request path unless SESSION_SECRET_KEY is set.
 if auth.AUTH_ENABLED:
+    users.init_db()
+    if users.user_count() == 0:
+        if auth.INITIAL_ADMIN_USERNAME and auth.INITIAL_ADMIN_PASSWORD:
+            users.bootstrap_initial_admin(auth.INITIAL_ADMIN_USERNAME, auth.INITIAL_ADMIN_PASSWORD)
+            logger.info("Created initial admin account %r from INITIAL_ADMIN_* env vars.", auth.INITIAL_ADMIN_USERNAME)
+        else:
+            logger.warning(
+                "Login is enabled but no accounts exist yet, and INITIAL_ADMIN_USERNAME/"
+                "INITIAL_ADMIN_PASSWORD aren't set - nobody can sign in until one is created."
+            )
     # Starlette wraps middleware in the order added, with the *last* one
     # added ending up outermost (runs first on the way in) - AuthGateMiddleware
     # reads request.session, so SessionMiddleware must be added second to
@@ -38,9 +50,9 @@ if auth.AUTH_ENABLED:
     app.add_middleware(auth.AuthGateMiddleware)
     app.add_middleware(SessionMiddleware, secret_key=auth.SESSION_SECRET_KEY, same_site="lax", https_only=auth.SESSION_COOKIE_SECURE)
     app.include_router(auth.router)
-    logger.info("Google sign-in enabled (%d allowed email(s))", len(auth.ALLOWED_EMAILS) or -1)
+    logger.info("Local login enabled (%d account(s)).", users.user_count())
 else:
-    logger.warning("Google sign-in NOT configured - this app is reachable without any login.")
+    logger.warning("Login NOT configured (SESSION_SECRET_KEY unset) - this app is reachable without any login.")
 
 STATIC_DIR = "app/static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -54,13 +66,61 @@ async def whoami(request: Request) -> dict:
 
 
 @app.get("/api/audit")
-async def audit_log() -> dict:
-    # Reachable at all only when auth is enabled (see AuthGateMiddleware -
-    # /api/* 401s without a session whenever AUTH_ENABLED is True) and
-    # otherwise pointless, since there's no identity to have audited.
-    if not auth.AUTH_ENABLED:
-        raise HTTPException(status_code=404, detail="Audit log requires Google sign-in to be configured.")
+async def audit_log(request: Request) -> dict:
+    auth.require_admin(request)
     return {"events": audit.read_events()}
+
+
+# -- Admin: account management (see app/users.py) --------------------------
+
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request) -> dict:
+    auth.require_admin(request)
+    return {"users": users.list_users()}
+
+
+@app.post("/api/admin/users")
+async def admin_create_user(request: Request, body: CreateUserRequest) -> dict:
+    auth.require_admin(request)
+    try:
+        users.create_user(body.username, body.password, body.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{username}/role")
+async def admin_set_role(request: Request, username: str, body: SetRoleRequest) -> dict:
+    admin = auth.require_admin(request)
+    if username == admin["username"] and body.role != "admin" and users.admin_count() <= 1:
+        raise HTTPException(status_code=400, detail="Can't demote the only remaining admin.")
+    try:
+        users.set_role(username, body.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{username}/reset-password")
+async def admin_reset_password(request: Request, username: str, body: ResetPasswordRequest) -> dict:
+    auth.require_admin(request)
+    try:
+        users.reset_password(username, body.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@app.delete("/api/admin/users/{username}")
+async def admin_delete_user(request: Request, username: str) -> dict:
+    admin = auth.require_admin(request)
+    if username == admin["username"]:
+        raise HTTPException(status_code=400, detail="Can't delete your own account while signed in as it.")
+    try:
+        users.delete_user(username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
 
 
 def _client_for(switch: SwitchCredential) -> NetgearClient:

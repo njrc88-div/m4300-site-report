@@ -264,55 +264,57 @@ docker run -p 8080:8080 m4300-site-report
   container runs, make sure that network path exists (routing, firewall,
   same Docker network, etc.).
 
-### Google sign-in (optional)
+### Login (optional)
 
 Entirely opt-in - with no `.env` file, the app runs exactly as before,
-reachable with no login at all. To gate access behind "Sign in with
-Google":
+reachable with no login at all. To gate access behind a username/password:
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a
-   project (or use an existing one) and go to **APIs & Services →
-   Credentials**.
-2. **Configure consent screen** if you haven't already - User type
-   **External** works for personal Google accounts. Leaving it in
-   **Testing** mode restricts sign-in to test users you explicitly add
-   there, which by itself limits who can even reach the login screen.
-3. **Create Credentials → OAuth client ID**, application type **Web
-   application**. Add an authorized redirect URI matching wherever this
-   app actually runs, e.g. `http://localhost:8080/auth/callback` for the
-   default local setup.
-4. Copy `.env.example` to `.env` and fill in the **Client ID** and
-   **Client secret** from that OAuth client, a random
-   `SESSION_SECRET_KEY` (the file explains how to generate one), and
-   optionally `ALLOWED_GOOGLE_EMAILS` - a comma-separated allow-list, since
-   "signed in with Google" and "allowed to use this app" aren't the same
-   thing unless you restrict it (or rely on the consent screen's own
-   Testing-mode test-user list).
-5. `docker compose up -d --build` again - `docker-compose.yml` reads
+1. Copy `.env.example` to `.env` and fill in a random `SESSION_SECRET_KEY`
+   (the file explains how to generate one) plus `INITIAL_ADMIN_USERNAME`
+   and `INITIAL_ADMIN_PASSWORD`.
+2. `docker compose up -d --build` again - `docker-compose.yml` reads
    `.env` automatically.
+3. On that first startup, since no accounts exist yet, the app creates the
+   initial admin account from those `INITIAL_ADMIN_*` env vars. They're
+   only consulted once - once at least one account exists, they're ignored
+   even if left set in `.env`, so it's safe to leave them there.
+4. Sign in as that admin and use the **4. Admin** tab to create everyone
+   else's accounts and set their role (see below) - there's no
+   self-service sign-up.
 
-This is a login *gate*, not a multi-tenant identity system - the app still
-has no user accounts and no per-user data; switch credentials still live
-only in each browser's own localStorage exactly as before. A successful
-Google sign-in just proves the browser belongs to someone on the allow-list
-and sets a signed session cookie (see `app/auth.py`).
+Accounts are local to this app - stored in a small SQLite database at
+`/srv/data/users.db` inside the container (bind-mounted to `./data/` on
+the host by `docker-compose.yml` so it survives `--build` recreating the
+container), with bcrypt-hashed passwords, never plaintext. This is a login
+*gate* for the app itself, not a multi-tenant identity system - accounts
+don't own any per-user data; switch credentials still live only in each
+browser's own localStorage exactly as before.
 
-Every sign-in, sign-out, and denied sign-in attempt (an email that
-completed Google's login but isn't on `ALLOWED_GOOGLE_EMAILS`) is appended
-to `app/audit.py`'s log - one JSON line per event (timestamp, event type,
-email, name, IP) at `/srv/data/audit.jsonl` inside the container, bind-mounted
-to `./data/audit.jsonl` on the host by `docker-compose.yml` so it survives
-`--build` recreating the container. A **4. Audit Log** tab appears in the
-app itself (only when Google sign-in is configured) showing the same data,
-most recent first, backed by `GET /api/audit` - which, like every other
-route, is only reachable by someone already signed in.
+There are two roles:
+
+- **User** - can use the app (Switches / Data Explorer / Report Builder)
+  but can't see the Admin tab.
+- **Admin** - everything a User can do, plus the **4. Admin** tab: create
+  accounts, change any account's role, reset passwords, and delete
+  accounts. Two guard rails prevent an admin from locking everyone out:
+  you can't delete the account you're currently signed in as, and you
+  can't demote the last remaining admin to User.
+
+Every sign-in, sign-out, and denied sign-in attempt (a valid username with
+the wrong password) is appended to `app/audit.py`'s log - one JSON line
+per event (timestamp, event type, username, IP) at `/srv/data/audit.jsonl`
+inside the container, bind-mounted to `./data/audit.jsonl` on the host so
+it survives `--build` recreating the container. The Admin tab's **Audit
+Log** table shows the same data, most recent first, backed by
+`GET /api/audit` - admin-only, like every other `/api/admin/*` route.
 
 ## Project layout
 
 ```
 app/
-  main.py             FastAPI routes (test-connection, explore, report)
-  auth.py              Optional Google sign-in gate (see "Google sign-in" above)
+  main.py             FastAPI routes (test-connection, explore, report, admin)
+  auth.py              Optional local login gate (see "Login" above)
+  users.py              SQLite-backed account store (accounts, roles, passwords)
   audit.py              Sign-in/out audit log the gate writes to
   models.py            Pydantic request/response models
   netgear_client.py    Async REST client for the M4300 API (login, GETs)
@@ -325,12 +327,16 @@ app/
 
 ## Security notes
 
-- No database, no server-side credential storage. Each request carries the
+- No server-side storage of *switch* credentials. Each request carries the
   credentials it needs and they live only for the lifetime of that request.
+  (App login accounts, if enabled, are a separate thing - see below.)
 - The container runs as a non-root user.
 - This tool is intended for use on trusted internal/management networks
   against switches you're authorized to administer.
 - With no `.env`, the app has **no login of any kind** - anyone who can
-  reach it on the network can use it, same as before Google sign-in was
-  added. Set up the optional Google sign-in gate (see above) before
+  reach it on the network can use it, same as before the login feature was
+  added. Set up the optional login gate (see "Login" above) before
   exposing this beyond a network you already trust.
+- When login is enabled, app account passwords are bcrypt-hashed in the
+  local SQLite store (`app/users.py`) - never stored or logged in
+  plaintext.

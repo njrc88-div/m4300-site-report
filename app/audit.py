@@ -1,12 +1,12 @@
-"""A minimal sign-in / sign-out audit log for the Google sign-in gate
-(see app/auth.py). Append-only JSON Lines file, one event per line -
-simple to write, simple to tail by hand, simple to read back for the
-in-app "Audit Log" view (see /api/audit in main.py).
+"""A minimal sign-in / sign-out audit log for the local-login gate (see
+app/auth.py). Append-only JSON Lines file, one event per line - simple
+to write, simple to tail by hand, simple to read back for the in-app
+"Audit Log" view (see /api/audit in main.py, admin-only).
 
-Only meaningful when auth.AUTH_ENABLED is True - with no Google sign-in
-configured there's no identity to attribute an event to, so callers
-should (and do) skip logging entirely rather than record events with no
-real user behind them.
+Only meaningful when auth.AUTH_ENABLED is True - with no login configured
+there's no identity to attribute an event to, so callers should (and do)
+skip logging entirely rather than record events with no real user behind
+them.
 """
 from __future__ import annotations
 
@@ -25,13 +25,12 @@ AUDIT_LOG_PATH = Path(os.environ.get("AUDIT_LOG_PATH", "/srv/data/audit.jsonl"))
 _lock = threading.Lock()
 
 
-def record_event(event: str, *, email: str, name: str | None, request: Request) -> None:
+def record_event(event: str, *, username: str, request: Request) -> None:
     """event: "sign_in" | "sign_out" | "sign_in_denied"."""
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "event": event,
-        "email": email,
-        "name": name,
+        "username": username,
         "ip": request.client.host if request.client else None,
     }
     try:

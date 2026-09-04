@@ -86,7 +86,10 @@
         renderVlanImageAttach();
         renderModuleGrid();
       }
-      if (btn.dataset.tab === "audit") renderAuditLog();
+      if (btn.dataset.tab === "admin") {
+        renderAccounts();
+        renderAuditLog();
+      }
     });
   });
 
@@ -495,39 +498,40 @@
 
   // ---------- auth ----------
 
+  let currentUser = null;
+
   async function renderWhoami() {
     const el = document.getElementById("whoami");
-    const auditBtn = document.getElementById("tab-audit-btn");
+    const adminBtn = document.getElementById("tab-admin-btn");
     try {
       const resp = await fetch("/api/me");
       const data = await resp.json();
-      auditBtn.hidden = !data.auth_enabled;
-      if (!data.auth_enabled || !data.user) {
+      currentUser = data.user || null;
+      adminBtn.hidden = !(data.auth_enabled && currentUser && currentUser.role === "admin");
+      if (!data.auth_enabled || !currentUser) {
         el.innerHTML = "";
         return;
       }
-      const u = data.user;
       el.innerHTML = `
-        ${u.picture ? `<img src="${escapeAttr(u.picture)}" alt="">` : ""}
-        <span>${escapeHtml(u.name || u.email)}</span>
+        <span>${escapeHtml(currentUser.username)}${currentUser.role === "admin" ? " (admin)" : ""}</span>
         <a href="/auth/logout">Sign out</a>
       `;
     } catch {
       el.innerHTML = "";
-      auditBtn.hidden = true;
+      adminBtn.hidden = true;
     }
   }
 
   async function renderAuditLog() {
     const tbody = document.getElementById("audit-tbody");
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Loading&hellip;</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Loading&hellip;</td></tr>`;
     try {
       const resp = await fetch("/api/audit");
       if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
       const data = await resp.json();
       const events = data.events || [];
       if (events.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No sign-in activity recorded yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No sign-in activity recorded yet.</td></tr>`;
         return;
       }
       tbody.innerHTML = events
@@ -535,18 +539,142 @@
           (e) => `<tr>
             <td>${escapeHtml(e.ts || "-")}</td>
             <td>${escapeHtml(EVENT_LABELS[e.event] || e.event || "-")}</td>
-            <td>${escapeHtml(e.email || "-")}</td>
-            <td>${escapeHtml(e.name || "-")}</td>
+            <td>${escapeHtml(e.username || "-")}</td>
             <td>${escapeHtml(e.ip || "-")}</td>
           </tr>`
         )
         .join("");
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Couldn't load the audit log: ${escapeHtml(String(err))}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Couldn't load the audit log: ${escapeHtml(String(err))}</td></tr>`;
     }
   }
 
   const EVENT_LABELS = { sign_in: "Sign in", sign_out: "Sign out", sign_in_denied: "Sign-in denied" };
+
+  // ---------- admin: accounts ----------
+
+  async function renderAccounts() {
+    const tbody = document.getElementById("accounts-tbody");
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Loading&hellip;</td></tr>`;
+    try {
+      const resp = await fetch("/api/admin/users");
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const data = await resp.json();
+      const accountList = data.users || [];
+      if (accountList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No accounts.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = accountList
+        .map((u) => {
+          const isSelf = currentUser && u.username === currentUser.username;
+          return `<tr data-username="${escapeAttr(u.username)}">
+            <td>${escapeHtml(u.username)}${isSelf ? " (you)" : ""}</td>
+            <td>
+              <select class="role-select" ${isSelf ? "disabled" : ""}>
+                <option value="user" ${u.role === "user" ? "selected" : ""}>User</option>
+                <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+              </select>
+            </td>
+            <td>${escapeHtml((u.created_at || "").slice(0, 10))}</td>
+            <td style="display:flex; gap:0.4rem;">
+              <button class="btn secondary reset-pw-btn" style="padding:0.3rem 0.5rem;">Reset password</button>
+              <button class="btn danger delete-user-btn" style="padding:0.3rem 0.5rem;" ${isSelf ? "disabled" : ""}>Delete</button>
+            </td>
+          </tr>`;
+        })
+        .join("");
+
+      tbody.querySelectorAll(".role-select").forEach((sel) => {
+        sel.addEventListener("change", async () => {
+          const username = sel.closest("tr").dataset.username;
+          try {
+            const resp = await fetch(`/api/admin/users/${encodeURIComponent(username)}/role`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ role: sel.value }),
+            });
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err.detail || `Request failed (${resp.status})`);
+            }
+            toast(`${username} is now ${sel.value}.`);
+            renderAccounts();
+          } catch (err) {
+            toast(`Failed: ${err.message}`);
+            renderAccounts();
+          }
+        });
+      });
+      tbody.querySelectorAll(".reset-pw-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const username = btn.closest("tr").dataset.username;
+          const newPassword = prompt(`New password for ${username} (min 8 characters):`);
+          if (!newPassword) return;
+          try {
+            const resp = await fetch(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password: newPassword }),
+            });
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err.detail || `Request failed (${resp.status})`);
+            }
+            toast(`Password reset for ${username}.`);
+          } catch (err) {
+            toast(`Failed: ${err.message}`);
+          }
+        });
+      });
+      tbody.querySelectorAll(".delete-user-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const username = btn.closest("tr").dataset.username;
+          if (!confirm(`Delete account ${username}? This can't be undone.`)) return;
+          try {
+            const resp = await fetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: "DELETE" });
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err.detail || `Request failed (${resp.status})`);
+            }
+            toast(`Deleted ${username}.`);
+            renderAccounts();
+          } catch (err) {
+            toast(`Failed: ${err.message}`);
+          }
+        });
+      });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Couldn't load accounts: ${escapeHtml(String(err))}</td></tr>`;
+    }
+  }
+
+  document.getElementById("create-user-btn").addEventListener("click", async () => {
+    const username = document.getElementById("new-user-username").value.trim();
+    const password = document.getElementById("new-user-password").value;
+    const role = document.getElementById("new-user-role").value;
+    if (!username || !password) {
+      toast("Username and password are required.");
+      return;
+    }
+    try {
+      const resp = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, role }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || `Request failed (${resp.status})`);
+      }
+      document.getElementById("new-user-username").value = "";
+      document.getElementById("new-user-password").value = "";
+      toast(`Account ${username} created.`);
+      renderAccounts();
+    } catch (err) {
+      toast(`Failed: ${err.message}`);
+    }
+  });
 
   // ---------- init ----------
 
