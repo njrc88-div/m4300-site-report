@@ -158,7 +158,6 @@
         <td class="model-cell">${modelCell(sw)}</td>
         <td>${statusPill(sw)}</td>
         <td style="display:flex; gap:0.35rem;">
-          <button class="btn secondary test-btn" style="padding:0.3rem 0.5rem;">Test</button>
           <button class="btn danger remove-btn" style="padding:0.3rem 0.5rem;">&times;</button>
         </td>
       `;
@@ -172,7 +171,6 @@
           if (field === "password_override") renderSwitchTable();
         });
       });
-      tr.querySelector(".test-btn").addEventListener("click", () => testConnection(sw, tr));
       tr.querySelector(".remove-btn").addEventListener("click", () => {
         switches = switches.filter((s) => s.id !== sw.id);
         selectedSwitchIds.delete(sw.id);
@@ -254,6 +252,27 @@
     switches.push(newSwitch());
     saveSwitches();
     renderSwitchTable();
+  });
+
+  document.getElementById("test-all-btn").addEventListener("click", async () => {
+    const testable = switches.filter((s) => s.host);
+    const statusEl = document.getElementById("test-all-status");
+    if (testable.length === 0) {
+      toast("Add a switch first.");
+      return;
+    }
+    const btn = document.getElementById("test-all-btn");
+    btn.disabled = true;
+    statusEl.textContent = `Testing ${testable.length} switch(es)...`;
+    const tbody = document.getElementById("switch-tbody");
+    await Promise.all(
+      testable.map((sw) => {
+        const tr = tbody.querySelector(`tr[data-id="${sw.id}"]`);
+        return tr ? testConnection(sw, tr) : Promise.resolve();
+      })
+    );
+    statusEl.textContent = "";
+    btn.disabled = false;
   });
 
   const globalPasswordInput = document.getElementById("global-switch-password");
