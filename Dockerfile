@@ -20,7 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-RUN useradd --create-home --uid 1000 appuser
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir -p /srv/data \
+    && chown appuser:appuser /srv/data
 USER appuser
 
 EXPOSE 8080

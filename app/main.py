@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth
+from . import audit, auth
 from .models import (
     ExploreRequest,
     ReportRequest,
@@ -51,6 +51,16 @@ async def whoami(request: Request) -> dict:
     if not auth.AUTH_ENABLED:
         return {"auth_enabled": False}
     return {"auth_enabled": True, "user": auth.current_user(request)}
+
+
+@app.get("/api/audit")
+async def audit_log() -> dict:
+    # Reachable at all only when auth is enabled (see AuthGateMiddleware -
+    # /api/* 401s without a session whenever AUTH_ENABLED is True) and
+    # otherwise pointless, since there's no identity to have audited.
+    if not auth.AUTH_ENABLED:
+        raise HTTPException(status_code=404, detail="Audit log requires Google sign-in to be configured.")
+    return {"events": audit.read_events()}
 
 
 def _client_for(switch: SwitchCredential) -> NetgearClient:

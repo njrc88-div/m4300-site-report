@@ -9,3 +9,9 @@ services:
     env_file:
       - path: .env
         required: false
+    # Bind-mounted (not a named volume) so the audit log - sign-in/out
+    # events when Google sign-in is enabled - survives `docker compose up
+    # --build` recreating the container, and so you can inspect the raw
+    # file directly if you ever need to.
+    volumes:
+      - ./data:/srv/data

@@ -21,6 +21,7 @@
   <button class="tab-btn active" data-tab="switches">1. Switches</button>
   <button class="tab-btn" data-tab="explorer">2. Data Explorer</button>
   <button class="tab-btn" data-tab="builder">3. Report Builder</button>
+  <button class="tab-btn" data-tab="audit" id="tab-audit-btn" hidden>4. Audit Log</button>
 </nav>
 
 <main>
@@ -140,6 +141,20 @@
     <div class="card">
       <button class="btn teal" id="rb-generate-btn">Generate PDF Report</button>
       <span id="rb-status" style="margin-left:0.8rem; font-size:0.85rem; color:var(--gray-muted);"></span>
+    </div>
+  </section>
+
+  <!-- ===================== AUDIT LOG ===================== -->
+  <section id="panel-audit" class="panel">
+    <div class="card">
+      <h2>Audit Log</h2>
+      <p class="hint">Sign-in and sign-out events for this app, most recent first.</p>
+      <table class="switch-table" id="audit-table">
+        <thead>
+          <tr><th style="width:20%">Time</th><th style="width:15%">Event</th><th style="width:30%">Email</th><th style="width:20%">Name</th><th style="width:15%">IP</th></tr>
+        </thead>
+        <tbody id="audit-tbody"></tbody>
+      </table>
     </div>
   </section>
 

@@ -24,6 +24,8 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from . import audit
 from starlette.responses import JSONResponse
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
@@ -90,22 +92,28 @@ async def callback(request: Request):
     token = await oauth.google.authorize_access_token(request)
     userinfo = token.get("userinfo") or await oauth.google.userinfo(token=token)
     email = (userinfo.get("email") or "").strip().lower()
+    name = userinfo.get("name")
     if not email:
         raise HTTPException(403, "Google didn't return an email address for this account.")
     if not userinfo.get("email_verified", True):
         raise HTTPException(403, "This Google account's email address isn't verified.")
     if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        audit.record_event("sign_in_denied", email=email, name=name, request=request)
         raise HTTPException(403, f"{email} isn't authorized to use this app.")
     request.session["user"] = {
         "email": email,
-        "name": userinfo.get("name"),
+        "name": name,
         "picture": userinfo.get("picture"),
     }
+    audit.record_event("sign_in", email=email, name=name, request=request)
     return RedirectResponse(url="/")
 
 
 @router.get("/logout")
 async def logout(request: Request):
+    user = current_user(request)
+    if user:
+        audit.record_event("sign_out", email=user["email"], name=user.get("name"), request=request)
     request.session.clear()
     return RedirectResponse(url="/auth/login")
 

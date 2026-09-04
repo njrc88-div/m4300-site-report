@@ -86,6 +86,7 @@
         renderVlanImageAttach();
         renderModuleGrid();
       }
+      if (btn.dataset.tab === "audit") renderAuditLog();
     });
   });
 
@@ -496,9 +497,11 @@
 
   async function renderWhoami() {
     const el = document.getElementById("whoami");
+    const auditBtn = document.getElementById("tab-audit-btn");
     try {
       const resp = await fetch("/api/me");
       const data = await resp.json();
+      auditBtn.hidden = !data.auth_enabled;
       if (!data.auth_enabled || !data.user) {
         el.innerHTML = "";
         return;
@@ -511,8 +514,39 @@
       `;
     } catch {
       el.innerHTML = "";
+      auditBtn.hidden = true;
     }
   }
+
+  async function renderAuditLog() {
+    const tbody = document.getElementById("audit-tbody");
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Loading&hellip;</td></tr>`;
+    try {
+      const resp = await fetch("/api/audit");
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const data = await resp.json();
+      const events = data.events || [];
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No sign-in activity recorded yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = events
+        .map(
+          (e) => `<tr>
+            <td>${escapeHtml(e.ts || "-")}</td>
+            <td>${escapeHtml(EVENT_LABELS[e.event] || e.event || "-")}</td>
+            <td>${escapeHtml(e.email || "-")}</td>
+            <td>${escapeHtml(e.name || "-")}</td>
+            <td>${escapeHtml(e.ip || "-")}</td>
+          </tr>`
+        )
+        .join("");
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Couldn't load the audit log: ${escapeHtml(String(err))}</td></tr>`;
+    }
+  }
+
+  const EVENT_LABELS = { sign_in: "Sign in", sign_out: "Sign out", sign_in_denied: "Sign-in denied" };
 
   // ---------- init ----------
 

@@ -297,12 +297,23 @@ only in each browser's own localStorage exactly as before. A successful
 Google sign-in just proves the browser belongs to someone on the allow-list
 and sets a signed session cookie (see `app/auth.py`).
 
+Every sign-in, sign-out, and denied sign-in attempt (an email that
+completed Google's login but isn't on `ALLOWED_GOOGLE_EMAILS`) is appended
+to `app/audit.py`'s log - one JSON line per event (timestamp, event type,
+email, name, IP) at `/srv/data/audit.jsonl` inside the container, bind-mounted
+to `./data/audit.jsonl` on the host by `docker-compose.yml` so it survives
+`--build` recreating the container. A **4. Audit Log** tab appears in the
+app itself (only when Google sign-in is configured) showing the same data,
+most recent first, backed by `GET /api/audit` - which, like every other
+route, is only reachable by someone already signed in.
+
 ## Project layout
 
 ```
 app/
   main.py             FastAPI routes (test-connection, explore, report)
   auth.py              Optional Google sign-in gate (see "Google sign-in" above)
+  audit.py              Sign-in/out audit log the gate writes to
   models.py            Pydantic request/response models
   netgear_client.py    Async REST client for the M4300 API (login, GETs)
   modules.py            Registry of data modules shared by Explorer + Report Builder
