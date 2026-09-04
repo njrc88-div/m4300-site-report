@@ -300,15 +300,123 @@
     sel.innerHTML = modules.map((m) => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join("");
   }
 
+  // ---------- explorer output formatting ----------
+
+  let lastExploreData = null;
+  let exploreViewMode = "formatted"; // "formatted" | "raw"
+
+  function humanizeKey(key) {
+    return key
+      .replace(/_/g, " ")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/^./, (c) => c.toUpperCase())
+      .trim();
+  }
+
+  // Modules often decorate a raw API field with a companion "<field>_text"
+  // holding the human-decoded value (e.g. status / status_text) - prefer
+  // that over the raw code and fold the "_text" field into the same row.
+  // Only do this when the base field actually exists under that exact
+  // name; several modules name the decoded field differently from its raw
+  // source (e.g. "poe_status_text" decodes "poeStatus", not "poe_status"),
+  // and in that case the "_text" field must stay visible on its own -
+  // silently dropping it would throw away the only readable copy of that
+  // data.
+  function resolveDisplayKeys(keys) {
+    const keySet = new Set(keys);
+    const consumedTextKeys = new Set();
+    keys.forEach((k) => {
+      if (k.endsWith("_text") && keySet.has(k.slice(0, -5))) consumedTextKeys.add(k);
+    });
+    const displayKeys = keys.filter((k) => !consumedTextKeys.has(k));
+    const valueFor = (obj, key) => (consumedTextKeys.has(`${key}_text`) ? obj[`${key}_text`] : obj[key]);
+    return { displayKeys, valueFor };
+  }
+
+  function formatExploreValue(value) {
+    if (value === null || value === undefined || value === "") {
+      return `<span class="empty-state" style="padding:0">-</span>`;
+    }
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value !== "object") return escapeHtml(String(value));
+    if (Array.isArray(value)) return formatExploreArray(value);
+    return formatExploreObject(value);
+  }
+
+  function formatExploreObject(obj) {
+    const { displayKeys, valueFor } = resolveDisplayKeys(Object.keys(obj));
+    if (displayKeys.length === 0) return `<span class="empty-state" style="padding:0">-</span>`;
+    const rows = displayKeys
+      .map((k) => `<tr><th>${escapeHtml(humanizeKey(k))}</th><td>${formatExploreValue(valueFor(obj, k))}</td></tr>`)
+      .join("");
+    return `<table class="kv-table">${rows}</table>`;
+  }
+
+  function formatExploreArray(arr) {
+    if (arr.length === 0) return `<span class="empty-state" style="padding:0">None</span>`;
+    const allObjects = arr.every((v) => v && typeof v === "object" && !Array.isArray(v));
+    if (!allObjects) return arr.map((v) => formatExploreValue(v)).join(", ");
+
+    const keyOrder = [];
+    const seen = new Set();
+    arr.forEach((item) => {
+      Object.keys(item).forEach((k) => {
+        if (!seen.has(k)) {
+          seen.add(k);
+          keyOrder.push(k);
+        }
+      });
+    });
+    const { displayKeys, valueFor } = resolveDisplayKeys(keyOrder);
+    const header = displayKeys.map((k) => `<th>${escapeHtml(humanizeKey(k))}</th>`).join("");
+    const rows = arr
+      .map((item) => `<tr>${displayKeys.map((k) => `<td>${formatExploreValue(valueFor(item, k))}</td>`).join("")}</tr>`)
+      .join("");
+    return `<div class="table-scroll"><table class="data-table"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function formatExploreResult(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return `<div>${formatExploreValue(data)}</div>`;
+    }
+    const { displayKeys, valueFor } = resolveDisplayKeys(Object.keys(data));
+    const sections = displayKeys
+      .map((k) => `<div class="explore-section"><h4>${escapeHtml(humanizeKey(k))}</h4>${formatExploreValue(valueFor(data, k))}</div>`)
+      .join("");
+    return sections || `<span class="empty-state">No data returned.</span>`;
+  }
+
+  function renderExploreOutput() {
+    const resultEl = document.getElementById("explore-result");
+    if (lastExploreData === null) return;
+    resultEl.innerHTML =
+      exploreViewMode === "raw"
+        ? `<pre class="result-json">${escapeHtml(JSON.stringify(lastExploreData, null, 2))}</pre>`
+        : formatExploreResult(lastExploreData);
+  }
+
+  function setExploreViewMode(mode) {
+    exploreViewMode = mode;
+    document.getElementById("explore-view-formatted-btn").classList.toggle("active", mode === "formatted");
+    document.getElementById("explore-view-raw-btn").classList.toggle("active", mode === "raw");
+    renderExploreOutput();
+  }
+
+  document.getElementById("explore-view-formatted-btn").addEventListener("click", () => setExploreViewMode("formatted"));
+  document.getElementById("explore-view-raw-btn").addEventListener("click", () => setExploreViewMode("raw"));
+
   document.getElementById("explore-fetch-btn").addEventListener("click", async () => {
     const swId = document.getElementById("explore-switch").value;
     const moduleId = document.getElementById("explore-module").value;
     const sw = switches.find((s) => s.id === swId);
     const resultEl = document.getElementById("explore-result");
+    const toggleEl = document.getElementById("explore-view-toggle");
     if (!sw) {
       toast("Add and select a switch first.");
       return;
     }
+    toggleEl.hidden = true;
+    lastExploreData = null;
     resultEl.innerHTML = `<div class="empty-state"><span class="spinner" style="border-top-color:#001E62;border-color:rgba(0,0,0,0.15)"></span> Fetching ${moduleId}...</div>`;
     try {
       const resp = await fetch("/api/explore", {
@@ -321,7 +429,9 @@
         resultEl.innerHTML = `<div class="toast show" style="position:static;background:#FDECEC;color:#B02A2A;">${escapeHtml(data.detail || "Request failed")}</div>`;
         return;
       }
-      resultEl.innerHTML = `<pre class="result-json">${escapeHtml(JSON.stringify(data.data, null, 2))}</pre>`;
+      lastExploreData = data.data;
+      toggleEl.hidden = false;
+      renderExploreOutput();
     } catch (err) {
       resultEl.innerHTML = `<div class="toast show" style="position:static;background:#FDECEC;color:#B02A2A;">${escapeHtml(String(err))}</div>`;
     }

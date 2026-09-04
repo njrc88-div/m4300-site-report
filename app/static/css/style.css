@@ -154,6 +154,28 @@ pre.result-json {
 .explore-controls { display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .explore-controls .field { min-width: 220px; }
 
+.view-toggle { display: flex; gap: 0.4rem; margin-bottom: 0.8rem; }
+.view-toggle[hidden] { display: none; }
+.view-toggle-btn {
+  background: #fff; border: 1px solid var(--gray-line); color: var(--gray-text);
+  padding: 0.3rem 0.7rem; border-radius: 5px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.view-toggle-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+.explore-section { margin-bottom: 1.2rem; }
+.explore-section:last-child { margin-bottom: 0; }
+.explore-section h4 { font-size: 0.85rem; color: var(--navy); margin: 0 0 0.4rem; }
+
+table.kv-table { border-collapse: collapse; font-size: 0.85rem; }
+table.kv-table th, table.kv-table td { padding: 0.3rem 0.7rem 0.3rem 0; border-bottom: 1px solid #EEF0F2; text-align: left; vertical-align: top; }
+table.kv-table th { color: var(--gray-muted); font-weight: 600; white-space: nowrap; }
+
+.table-scroll { overflow-x: auto; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; white-space: nowrap; }
+table.data-table th, table.data-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid #EEF0F2; text-align: left; }
+table.data-table th { color: var(--gray-muted); font-weight: 600; }
+table.data-table tbody tr:hover { background: #F7F9FC; }
+
 .empty-state { color: var(--gray-muted); font-size: 0.85rem; padding: 1rem 0; }
 .toast {
   position: fixed; bottom: 1.2rem; right: 1.2rem; background: var(--dark); color: #fff;
