@@ -51,12 +51,26 @@ The app has three tabs:
 1. **Switches** — add every switch at the site (label, host/IP, port,
    username, password). Credentials are kept in your browser's
    `localStorage` only; they're sent to the backend solely when you click
-   Test, Fetch, or Generate, and the server never writes them to disk.
-   Click **Test** to confirm the app can log in and read `/device_info` —
-   the switch's reported model and firmware version are then shown in the
+   Test, Fetch, or Generate, and the server never writes them to disk. A
+   **Global Password** field applies to every switch by default; a
+   per-switch **Override** checkbox reveals that switch's own password
+   field for the ones that need a different one. Click **Test All** to
+   confirm the app can log in and read `/device_info` for every switch at
+   once — the reported model and firmware version are then shown in the
    table and carried through to the Explorer and Report Builder tabs, so
    you always know which physical unit (M4300, M4350, M4250, ...) you're
    looking at.
+
+   **No switch to test against?** Click **+ Add Demo Switches** to add
+   three fake, pre-wired switches (two MLAG-peered cores + one edge
+   switch dual-homed across both) with realistic, internally consistent
+   canned data — LLDP, LAG, VLANs, PoE, STP, and everything else a real
+   switch would report. They flow through Test/Explorer/Report Builder
+   exactly like a real switch (no code path is skipped, just the actual
+   network call), so you can try out the Data Explorer, generate a full
+   PDF report, and see the site topology diagram - including the
+   MLAG-authoritative core-pair detection - without a real switch on the
+   network. See `app/mock_switches.py` for the fixture data.
 2. **Data Explorer** — pick a saved switch and a data module (ports, PoE,
    VLANs, STP, LLDP neighbors, fiber diagnostics, etc.) and fetch it live
    to sanity-check the API before building a report.
@@ -318,6 +332,7 @@ app/
   audit.py              Sign-in/out audit log the gate writes to
   models.py            Pydantic request/response models
   netgear_client.py    Async REST client for the M4300 API (login, GETs)
+  mock_switches.py       Fixture data + client for the built-in "Demo Switches"
   modules.py            Registry of data modules shared by Explorer + Report Builder
   enums.py               Human-readable decodes for the API's numeric enums
   report.py                Jinja2 -> WeasyPrint PDF rendering

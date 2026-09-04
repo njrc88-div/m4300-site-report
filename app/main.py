@@ -20,6 +20,7 @@ from .models import (
     TestConnectionRequest,
     TestConnectionResponse,
 )
+from .mock_switches import DEMO_SWITCH_LIST, MockNetgearClient
 from .modules import MODULES, MODULES_BY_ID, merge_avui_device_info, stp_priority_from
 from .netgear_client import NetgearAPIError, NetgearClient
 from .report import render_report_pdf
@@ -123,7 +124,9 @@ async def admin_delete_user(request: Request, username: str) -> dict:
     return {"ok": True}
 
 
-def _client_for(switch: SwitchCredential) -> NetgearClient:
+def _client_for(switch: SwitchCredential) -> NetgearClient | MockNetgearClient:
+    if switch.demo_id:
+        return MockNetgearClient(switch.demo_id)
     return NetgearClient(
         host=switch.host,
         username=switch.username,
@@ -136,6 +139,11 @@ def _client_for(switch: SwitchCredential) -> NetgearClient:
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(f"{STATIC_DIR}/index.html")
+
+
+@app.get("/api/demo-switches")
+async def list_demo_switches() -> list[dict]:
+    return DEMO_SWITCH_LIST
 
 
 @app.get("/api/modules")

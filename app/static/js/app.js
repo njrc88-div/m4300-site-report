@@ -8,6 +8,7 @@
   let vlanInfoImage = loadVlanInfoImage();
   let globalSwitchPassword = loadGlobalPassword();
   let modules = []; // populated from /api/modules
+  let demoSwitchDefs = []; // populated from /api/demo-switches
   let selectedModuleIds = new Set();
   let selectedSwitchIds = new Set();
 
@@ -95,6 +96,26 @@
       status: "pending",
       statusMsg: "",
       port_map_image: null,
+      demo_id: null,
+    };
+  }
+
+  function newDemoSwitch(def) {
+    return {
+      id: crypto.randomUUID(),
+      name: def.name,
+      host: def.host,
+      port: 8443,
+      username: "",
+      password: "",
+      password_override: false,
+      verify_tls: false,
+      model: def.model,
+      firmware: "",
+      status: "pending",
+      statusMsg: "",
+      port_map_image: null,
+      demo_id: def.id,
     };
   }
 
@@ -145,16 +166,21 @@
     switches.forEach((sw) => {
       const tr = document.createElement("tr");
       tr.dataset.id = sw.id;
+      const demoCell = `<span class="status-pill pending" title="Demo switch - no real network connection">Demo</span>`;
       tr.innerHTML = `
         <td><input type="text" data-field="name" value="${escapeAttr(sw.name)}" placeholder="IDF2"></td>
-        <td><input type="text" data-field="host" value="${escapeAttr(sw.host)}" placeholder="10.1.1.5"></td>
-        <td><input type="number" data-field="port" value="${sw.port}"></td>
-        <td><input type="text" data-field="username" value="${escapeAttr(sw.username)}" placeholder="admin"></td>
-        <td class="password-cell">${sw.password_override
+        <td>${sw.demo_id
+          ? `${demoCell} ${escapeHtml(sw.host)}`
+          : `<input type="text" data-field="host" value="${escapeAttr(sw.host)}" placeholder="10.1.1.5">`}</td>
+        <td>${sw.demo_id ? "-" : `<input type="number" data-field="port" value="${sw.port}">`}</td>
+        <td>${sw.demo_id ? "-" : `<input type="text" data-field="username" value="${escapeAttr(sw.username)}" placeholder="admin">`}</td>
+        <td class="password-cell">${sw.demo_id
+          ? "-"
+          : sw.password_override
           ? `<input type="password" data-field="password" value="${escapeAttr(sw.password)}">`
           : `<span class="empty-state" style="padding:0">Using global</span>`}</td>
-        <td style="text-align:center"><input type="checkbox" data-field="password_override" ${sw.password_override ? "checked" : ""} title="Use a different password for this switch"></td>
-        <td style="text-align:center"><input type="checkbox" data-field="verify_tls" ${sw.verify_tls ? "checked" : ""}></td>
+        <td style="text-align:center">${sw.demo_id ? "-" : `<input type="checkbox" data-field="password_override" ${sw.password_override ? "checked" : ""} title="Use a different password for this switch">`}</td>
+        <td style="text-align:center">${sw.demo_id ? "-" : `<input type="checkbox" data-field="verify_tls" ${sw.verify_tls ? "checked" : ""}>`}</td>
         <td class="model-cell">${modelCell(sw)}</td>
         <td>${statusPill(sw)}</td>
         <td style="display:flex; gap:0.35rem;">
@@ -236,6 +262,7 @@
       password: sw.password_override ? sw.password : globalSwitchPassword,
       verify_tls: !!sw.verify_tls,
       port_map_image: sw.port_map_image || null,
+      demo_id: sw.demo_id || null,
     };
   }
 
@@ -252,6 +279,23 @@
     switches.push(newSwitch());
     saveSwitches();
     renderSwitchTable();
+  });
+
+  document.getElementById("add-demo-switches-btn").addEventListener("click", () => {
+    if (demoSwitchDefs.length === 0) {
+      toast("Demo switches aren't available right now.");
+      return;
+    }
+    const existingDemoIds = new Set(switches.filter((s) => s.demo_id).map((s) => s.demo_id));
+    const toAdd = demoSwitchDefs.filter((def) => !existingDemoIds.has(def.id));
+    if (toAdd.length === 0) {
+      toast("All demo switches are already added.");
+      return;
+    }
+    toAdd.forEach((def) => switches.push(newDemoSwitch(def)));
+    saveSwitches();
+    renderSwitchTable();
+    toast(`Added ${toAdd.length} demo switch(es).`);
   });
 
   document.getElementById("test-all-btn").addEventListener("click", async () => {
@@ -853,6 +897,12 @@
       modules = await resp.json();
     } catch {
       modules = [];
+    }
+    try {
+      const resp = await fetch("/api/demo-switches");
+      demoSwitchDefs = await resp.json();
+    } catch {
+      demoSwitchDefs = [];
     }
     renderExploreModuleOptions();
     renderExploreSwitchOptions();

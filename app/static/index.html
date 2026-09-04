@@ -55,11 +55,17 @@
         </thead>
         <tbody id="switch-tbody"></tbody>
       </table>
-      <div style="margin-top:0.8rem; display:flex; gap:0.6rem; align-items:center;">
+      <div style="margin-top:0.8rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
         <button class="btn secondary" id="add-switch-btn">+ Add Switch</button>
+        <button class="btn secondary" id="add-demo-switches-btn">+ Add Demo Switches</button>
         <button class="btn" id="test-all-btn">Test All</button>
         <span id="test-all-status" style="font-size:0.85rem; color:var(--gray-muted);"></span>
       </div>
+      <p class="hint" style="margin-top:0.5rem;">
+        No switch to test against? "+ Add Demo Switches" adds three fake, pre-wired switches
+        (two MLAG-peered cores + one edge switch) with realistic canned data - use them to try
+        out the Explorer, reports, and the topology diagram with no real network connection.
+      </p>
     </div>
   </section>
 

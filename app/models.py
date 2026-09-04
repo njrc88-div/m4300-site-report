@@ -16,6 +16,11 @@ class SwitchCredential(BaseModel):
         None, description="Optional data: URL of a user-attached port layout image for this "
         "switch, shown on the site-diagrams page as-is - not fetched from the switch."
     )
+    demo_id: str | None = Field(
+        None, description="If set, one of app/mock_switches.py's fixture switch ids - the "
+        "backend serves canned demo data instead of making a real network connection, and "
+        "host/username/password/verify_tls are ignored."
+    )
 
 
 class TestConnectionRequest(BaseModel):
