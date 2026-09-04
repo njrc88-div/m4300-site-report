@@ -4,3 +4,8 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    # Optional - see .env.example. Missing .env or unset vars just means
+    # Google sign-in stays disabled; nothing else in this file depends on it.
+    env_file:
+      - path: .env
+        required: false

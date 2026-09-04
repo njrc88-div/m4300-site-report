@@ -35,6 +35,10 @@ header.app-header {
 header.app-header img { height: 28px; }
 header.app-header .title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em; }
 header.app-header .subtitle { font-size: 0.78rem; color: var(--teal-light); }
+.whoami { margin-left: auto; display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem; }
+.whoami img { height: 24px; width: 24px; border-radius: 50%; }
+.whoami a { color: var(--teal-light); text-decoration: none; }
+.whoami a:hover { text-decoration: underline; }
 
 nav.tabs {
   display: flex;

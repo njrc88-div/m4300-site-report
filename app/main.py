@@ -4,10 +4,12 @@ import io
 import logging
 from datetime import date
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
+from . import auth
 from .models import (
     ExploreRequest,
     ReportRequest,
@@ -25,8 +27,30 @@ logger = logging.getLogger("m4300_report")
 
 app = FastAPI(title="M4300 Site Report Generator")
 
+# Entirely opt-in - see app/auth.py's module docstring. Adds nothing to
+# the request path unless GOOGLE_CLIENT_ID/SECRET and SESSION_SECRET_KEY
+# are all set.
+if auth.AUTH_ENABLED:
+    # Starlette wraps middleware in the order added, with the *last* one
+    # added ending up outermost (runs first on the way in) - AuthGateMiddleware
+    # reads request.session, so SessionMiddleware must be added second to
+    # actually execute first and populate it before the gate checks it.
+    app.add_middleware(auth.AuthGateMiddleware)
+    app.add_middleware(SessionMiddleware, secret_key=auth.SESSION_SECRET_KEY, same_site="lax", https_only=auth.SESSION_COOKIE_SECURE)
+    app.include_router(auth.router)
+    logger.info("Google sign-in enabled (%d allowed email(s))", len(auth.ALLOWED_EMAILS) or -1)
+else:
+    logger.warning("Google sign-in NOT configured - this app is reachable without any login.")
+
 STATIC_DIR = "app/static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/api/me")
+async def whoami(request: Request) -> dict:
+    if not auth.AUTH_ENABLED:
+        return {"auth_enabled": False}
+    return {"auth_enabled": True, "user": auth.current_user(request)}
 
 
 def _client_for(switch: SwitchCredential) -> NetgearClient:

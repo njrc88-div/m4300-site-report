@@ -492,10 +492,33 @@
     return escapeHtml(str);
   }
 
+  // ---------- auth ----------
+
+  async function renderWhoami() {
+    const el = document.getElementById("whoami");
+    try {
+      const resp = await fetch("/api/me");
+      const data = await resp.json();
+      if (!data.auth_enabled || !data.user) {
+        el.innerHTML = "";
+        return;
+      }
+      const u = data.user;
+      el.innerHTML = `
+        ${u.picture ? `<img src="${escapeAttr(u.picture)}" alt="">` : ""}
+        <span>${escapeHtml(u.name || u.email)}</span>
+        <a href="/auth/logout">Sign out</a>
+      `;
+    } catch {
+      el.innerHTML = "";
+    }
+  }
+
   // ---------- init ----------
 
   async function init() {
     renderSwitchTable();
+    renderWhoami();
     try {
       const resp = await fetch("/api/modules");
       modules = await resp.json();

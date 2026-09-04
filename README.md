@@ -264,11 +264,45 @@ docker run -p 8080:8080 m4300-site-report
   container runs, make sure that network path exists (routing, firewall,
   same Docker network, etc.).
 
+### Google sign-in (optional)
+
+Entirely opt-in - with no `.env` file, the app runs exactly as before,
+reachable with no login at all. To gate access behind "Sign in with
+Google":
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project (or use an existing one) and go to **APIs & Services →
+   Credentials**.
+2. **Configure consent screen** if you haven't already - User type
+   **External** works for personal Google accounts. Leaving it in
+   **Testing** mode restricts sign-in to test users you explicitly add
+   there, which by itself limits who can even reach the login screen.
+3. **Create Credentials → OAuth client ID**, application type **Web
+   application**. Add an authorized redirect URI matching wherever this
+   app actually runs, e.g. `http://localhost:8080/auth/callback` for the
+   default local setup.
+4. Copy `.env.example` to `.env` and fill in the **Client ID** and
+   **Client secret** from that OAuth client, a random
+   `SESSION_SECRET_KEY` (the file explains how to generate one), and
+   optionally `ALLOWED_GOOGLE_EMAILS` - a comma-separated allow-list, since
+   "signed in with Google" and "allowed to use this app" aren't the same
+   thing unless you restrict it (or rely on the consent screen's own
+   Testing-mode test-user list).
+5. `docker compose up -d --build` again - `docker-compose.yml` reads
+   `.env` automatically.
+
+This is a login *gate*, not a multi-tenant identity system - the app still
+has no user accounts and no per-user data; switch credentials still live
+only in each browser's own localStorage exactly as before. A successful
+Google sign-in just proves the browser belongs to someone on the allow-list
+and sets a signed session cookie (see `app/auth.py`).
+
 ## Project layout
 
 ```
 app/
   main.py             FastAPI routes (test-connection, explore, report)
+  auth.py              Optional Google sign-in gate (see "Google sign-in" above)
   models.py            Pydantic request/response models
   netgear_client.py    Async REST client for the M4300 API (login, GETs)
   modules.py            Registry of data modules shared by Explorer + Report Builder
@@ -285,3 +319,7 @@ app/
 - The container runs as a non-root user.
 - This tool is intended for use on trusted internal/management networks
   against switches you're authorized to administer.
+- With no `.env`, the app has **no login of any kind** - anyone who can
+  reach it on the network can use it, same as before Google sign-in was
+  added. Set up the optional Google sign-in gate (see above) before
+  exposing this beyond a network you already trust.
